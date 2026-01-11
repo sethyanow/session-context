@@ -48,8 +48,10 @@ async function readJsonFile<T>(path: string): Promise<T | null> {
 // Check if harness is available using Bun APIs
 export async function isHarnessAvailable(cwd: string): Promise<boolean> {
   try {
-    const harnessDir = Bun.file(join(cwd, ".claude-harness"));
-    return await harnessDir.exists();
+    // Use Bun.spawn to check if directory exists (Bun.file() is for files, not directories)
+    const proc = Bun.spawn(["test", "-d", join(cwd, ".claude-harness")]);
+    await proc.exited;
+    return proc.exitCode === 0;
   } catch {
     return false;
   }
