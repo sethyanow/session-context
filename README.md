@@ -12,16 +12,13 @@ Session continuity and context recovery for Claude Code. Auto-tracks your work v
 
 ## Installation
 
-```bash
-# Clone the repository
-git clone https://github.com/sethyanow/session-context.git
+```shell
+# Add the marketplace (one-time setup)
+/plugin marketplace add sethyanow/session-context
 
-# Install dependencies
-cd session-context/mcp
-bun install
+# Install the plugin
+/plugin install session-context@sethyanow
 ```
-
-Add to your Claude Code plugins configuration.
 
 ## Commands
 
