@@ -8,7 +8,7 @@ import { readFile, writeFile, mkdir } from "fs/promises";
 import { join, dirname } from "path";
 import { homedir } from "os";
 import { createHash } from "crypto";
-import { glob } from "glob";
+import { Glob } from "bun";
 
 async function main() {
   // Get current working directory and project hash
@@ -25,7 +25,8 @@ async function main() {
   let planContent: string | null = null;
 
   try {
-    const planFiles = await glob("*.md", { cwd: plansDir, absolute: true });
+    const glob = new Glob("*.md");
+    const planFiles = Array.from(glob.scanSync(plansDir)).map(f => join(plansDir, f));
     if (planFiles.length > 0) {
       // Sort by modification time, get most recent
       const filesWithStats = await Promise.all(
