@@ -3,11 +3,10 @@ import { mkdir, readFile, readdir, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { Handoff, SessionContextConfig } from "../types.js";
-import { withFileLock } from "./lock.js";
 import { shouldExcludeFile } from "../utils/privacy.js";
 
-function getStorageDir(): string { return join(process.env.HOME || homedir(), ".claude", "session-context", "handoffs"); }
-function getConfigPath(): string { return join(process.env.HOME || homedir(), ".claude", "session-context", "config.json"); }
+const STORAGE_DIR = join(homedir(), ".claude", "session-context", "handoffs");
+const CONFIG_PATH = join(homedir(), ".claude", "session-context", "config.json");
 
 // Generate short handoff ID
 export function generateHandoffId(): string {
@@ -26,22 +25,22 @@ export function getProjectHash(projectRoot: string): string {
 
 // Ensure storage directory exists
 async function ensureStorageDir(): Promise<void> {
-  await mkdir(getStorageDir(), { recursive: true });
+  await mkdir(STORAGE_DIR, { recursive: true });
 }
 
 // Get rolling checkpoint path for a project
 function getRollingCheckpointPath(projectHash: string): string {
-  return join(getStorageDir(), `${projectHash}-current.json`);
+  return join(STORAGE_DIR, `${projectHash}-current.json`);
 }
 
 // Get explicit handoff path (new format includes project hash for faster filtering)
 function getHandoffPath(handoffId: string, projectHash?: string): string {
   if (projectHash) {
     // New format: {projectHash}.{id}.json - allows filtering by filename
-    return join(getStorageDir(), `${projectHash}.${handoffId}.json`);
+    return join(STORAGE_DIR, `${projectHash}.${handoffId}.json`);
   }
   // Old format: {id}.json - for backward compatibility
-  return join(getStorageDir(), `${handoffId}.json`);
+  return join(STORAGE_DIR, `${handoffId}.json`);
 }
 
 // Read a handoff by ID or project hash (for rolling)
@@ -83,98 +82,93 @@ export async function updateRollingCheckpoint(
   }>,
 ): Promise<Handoff> {
   const hash = getProjectHash(projectRoot);
-  const lockResourcePath = `rolling-${hash}`;
+  let handoff = await readHandoff(hash, true);
 
-  // Use file lock to prevent race conditions
-  return withFileLock(lockResourcePath, getStorageDir(), async () => {
-    let handoff = await readHandoff(hash, true);
+  const now = new Date().toISOString();
 
-    const now = new Date().toISOString();
+  if (!handoff) {
+    // Create new rolling checkpoint
+    handoff = {
+      id: generateHandoffId(),
+      version: 1,
+      created: now,
+      updated: now,
+      ttl: "24h",
+      project: {
+        root: projectRoot,
+        hash,
+        branch,
+      },
+      context: {
+        task: updates.task || "Working on project",
+        summary: "",
+        state: "in_progress",
+        files: [],
+        decisions: [],
+        blockers: [],
+        nextSteps: [],
+        userDecisions: [],
+      },
+      todos: [],
+      references: {},
+    };
+  }
 
-    if (!handoff) {
-      // Create new rolling checkpoint
-      handoff = {
-        id: generateHandoffId(),
-        version: 1,
-        created: now,
-        updated: now,
-        ttl: "24h",
-        project: {
-          root: projectRoot,
-          hash,
-          branch,
-        },
-        context: {
-          task: updates.task || "Working on project",
-          summary: "",
-          state: "in_progress",
-          files: [],
-          decisions: [],
-          blockers: [],
-          nextSteps: [],
-          userDecisions: [],
-        },
-        todos: [],
-        references: {},
-      };
-    }
+  // Apply updates
+  handoff.updated = now;
+  handoff.project.branch = branch;
 
-    // Apply updates
-    handoff.updated = now;
-    handoff.project.branch = branch;
+  if (updates.task) {
+    handoff.context.task = updates.task;
+  }
 
-    if (updates.task) {
-      handoff.context.task = updates.task;
-    }
+  if (updates.files) {
+    // Get privacy configuration
+    const config = await getConfig();
+    const excludePatterns = config.privacy.excludePatterns;
 
-    if (updates.files) {
-      // Get privacy configuration
-      const config = await getConfig();
-      const excludePatterns = config.privacy.excludePatterns;
-
-      // Merge files, updating existing entries, but filter out excluded files
-      for (const newFile of updates.files) {
-        // Skip files that match exclude patterns
-        if (shouldExcludeFile(newFile.path, excludePatterns)) {
-          continue;
-        }
-
-        const existing = handoff.context.files.find((f) => f.path === newFile.path);
-        if (existing) {
-          existing.role = newFile.role;
-        } else {
-          handoff.context.files.push(newFile);
-        }
+    // Merge files, updating existing entries, but filter out excluded files
+    for (const newFile of updates.files) {
+      // Skip files that match exclude patterns
+      if (shouldExcludeFile(newFile.path, excludePatterns)) {
+        continue;
       }
 
-      // Also filter existing files in case patterns were updated
-      handoff.context.files = handoff.context.files.filter(
-        (file) => !shouldExcludeFile(file.path, excludePatterns),
-      );
+      const existing = handoff.context.files.find((f) => f.path === newFile.path);
+      if (existing) {
+        existing.role = newFile.role;
+      } else {
+        handoff.context.files.push(newFile);
+      }
     }
 
-    if (updates.todos) {
-      handoff.todos = updates.todos;
-    }
+    // Also filter existing files in case patterns were updated
+    handoff.context.files = handoff.context.files.filter(
+      (file) => !shouldExcludeFile(file.path, excludePatterns)
+    );
+  }
 
-    if (updates.plan) {
-      handoff.context.plan = {
-        path: updates.plan.path,
-        cachedAt: now,
-        content: updates.plan.content,
-      };
-    }
+  if (updates.todos) {
+    handoff.todos = updates.todos;
+  }
 
-    if (updates.userDecision) {
-      handoff.context.userDecisions.push({
-        ...updates.userDecision,
-        timestamp: now,
-      });
-    }
+  if (updates.plan) {
+    handoff.context.plan = {
+      path: updates.plan.path,
+      cachedAt: now,
+      content: updates.plan.content,
+    };
+  }
 
-    await writeHandoff(handoff, true);
-    return handoff;
-  });
+  if (updates.userDecision) {
+    handoff.context.userDecisions.push({
+      ...updates.userDecision,
+      timestamp: now,
+    });
+  }
+
+  await writeHandoff(handoff, true);
+  return handoff;
 }
 
 // Create explicit handoff from rolling checkpoint
@@ -254,14 +248,14 @@ function parseTTL(ttl: string): number {
 export async function cleanupExpiredHandoffs(): Promise<number> {
   try {
     await ensureStorageDir();
-    const files = await readdir(getStorageDir());
+    const files = await readdir(STORAGE_DIR);
     const now = Date.now();
     let cleaned = 0;
 
     for (const file of files) {
       if (!file.endsWith(".json")) continue;
 
-      const path = join(getStorageDir(), file);
+      const path = join(STORAGE_DIR, file);
       try {
         const content = await readFile(path, "utf-8");
         const handoff = JSON.parse(content) as Handoff;
@@ -288,13 +282,13 @@ export async function listHandoffs(projectRoot: string): Promise<Handoff[]> {
   try {
     await ensureStorageDir();
     const hash = getProjectHash(projectRoot);
-    const files = await readdir(getStorageDir());
+    const files = await readdir(STORAGE_DIR);
     const handoffs: Handoff[] = [];
 
     for (const file of files) {
       if (!file.endsWith(".json")) continue;
 
-      const path = join(getStorageDir(), file);
+      const path = join(STORAGE_DIR, file);
       try {
         const content = await readFile(path, "utf-8");
         const handoff = JSON.parse(content) as Handoff;
@@ -350,7 +344,7 @@ export async function getConfig(): Promise<SessionContextConfig> {
   };
 
   try {
-    const content = await readFile(getConfigPath(), "utf-8");
+    const content = await readFile(CONFIG_PATH, "utf-8");
     const config = JSON.parse(content) as Partial<SessionContextConfig>;
     return { ...defaults, ...config };
   } catch {

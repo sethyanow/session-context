@@ -1,5 +1,3 @@
-import { readFile } from "node:fs/promises";
-import { homedir } from "node:os";
 import { join } from "node:path";
 
 export interface ClaudeMemObservation {
@@ -17,12 +15,14 @@ interface ClaudeConfig {
   };
 }
 
-// Check if claude-mem is available
+// Check if claude-mem is available using Bun APIs
 export async function isClaudeMemAvailable(): Promise<boolean> {
   try {
-    const configPath = join(homedir(), ".claude.json");
-    const content = await readFile(configPath, "utf-8");
-    const config = JSON.parse(content) as ClaudeConfig;
+    const homeDir = Bun.env.HOME || process.env.HOME || "";
+    const configPath = join(homeDir, ".claude.json");
+    const file = Bun.file(configPath);
+    if (!(await file.exists())) return false;
+    const config = (await file.json()) as ClaudeConfig;
     // Check if claude-mem MCP is configured (it's a plugin, so check for the plugin MCP)
     return !!config.mcpServers?.["plugin_claude-mem_mcp-search"];
   } catch {

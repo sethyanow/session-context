@@ -4,14 +4,12 @@
  * Tracks file modifications in the rolling checkpoint
  */
 
-import { exec } from "child_process";
-import { promisify } from "util";
-import { readFile, writeFile, mkdir } from "fs/promises";
-import { join } from "path";
-import { homedir } from "os";
-import { createHash } from "crypto";
-
-const execAsync = promisify(exec);
+import { writeFile } from "fs/promises";
+import {
+  getOrCreateCheckpoint,
+  getCheckpointPath,
+} from "../mcp/src/utils/checkpoint.js";
+import { isEditTrackingEnabled } from "./lib/config.ts";
 
 // Hook receives: tool_name, tool_input (JSON), tool_output
 const toolName = process.argv[2];
@@ -30,6 +28,11 @@ interface ToolInputWrite {
 }
 
 async function main() {
+  // Check if edit tracking is enabled
+  if (!(await isEditTrackingEnabled())) {
+    process.exit(0);
+  }
+
   if (!toolInput) {
     process.exit(0);
   }
@@ -54,76 +57,30 @@ async function main() {
     role = "notebook modified";
   }
 
-  // Get current working directory and project hash
+  // Get current working directory
   const cwd = process.cwd();
-  const projectHash = createHash("sha256").update(cwd).digest("hex").slice(0, 8);
 
-  // Storage path
-  const storageDir = join(homedir(), ".claude", "session-context", "handoffs");
-  const checkpointPath = join(storageDir, `${projectHash}-current.json`);
-
-  // Ensure storage directory exists
-  await mkdir(storageDir, { recursive: true });
-
-  // Read existing checkpoint or create new
-  let checkpoint: Record<string, unknown>;
-  try {
-    const content = await readFile(checkpointPath, "utf-8");
-    checkpoint = JSON.parse(content);
-  } catch {
-    // Get current branch
-    let branch = "main";
-    try {
-      const { stdout } = await execAsync("git branch --show-current", { cwd });
-      branch = stdout.trim() || "main";
-    } catch {}
-
-    checkpoint = {
-      id: Math.random().toString(36).slice(2, 7),
-      version: 1,
-      created: new Date().toISOString(),
-      updated: new Date().toISOString(),
-      ttl: "24h",
-      project: {
-        root: cwd,
-        hash: projectHash,
-        branch,
-      },
-      context: {
-        task: "Working on project",
-        summary: "",
-        state: "in_progress",
-        files: [],
-        decisions: [],
-        blockers: [],
-        nextSteps: [],
-        userDecisions: [],
-      },
-      todos: [],
-      references: {},
-    };
-  }
+  // Get or create checkpoint using shared utilities
+  const checkpoint = await getOrCreateCheckpoint(cwd);
 
   // Update checkpoint
   checkpoint.updated = new Date().toISOString();
 
   // Ensure context.files exists
-  const context = checkpoint.context as Record<string, unknown>;
-  if (!Array.isArray(context.files)) {
-    context.files = [];
+  if (!Array.isArray(checkpoint.context.files)) {
+    checkpoint.context.files = [];
   }
 
-  const files = context.files as { path: string; role: string }[];
-
   // Update or add file entry
-  const existingIndex = files.findIndex(f => f.path === filePath);
+  const existingIndex = checkpoint.context.files.findIndex(f => f.path === filePath);
   if (existingIndex >= 0) {
-    files[existingIndex].role = role;
+    checkpoint.context.files[existingIndex].role = role;
   } else {
-    files.push({ path: filePath, role });
+    checkpoint.context.files.push({ path: filePath, role });
   }
 
   // Write updated checkpoint
+  const checkpointPath = getCheckpointPath(cwd);
   await writeFile(checkpointPath, JSON.stringify(checkpoint, null, 2), "utf-8");
 
   // Silent success - no output

@@ -261,15 +261,44 @@ async function handleCreateHandoff(params: CreateHandoffParams, cwd: string) {
 
 // Tool: update_checkpoint
 async function handleUpdateCheckpoint(params: UpdateCheckpointParams, cwd: string) {
+  const config = await getConfig();
   const branch = (await getBranch(cwd)) ?? "main";
 
-  const handoff = await updateRollingCheckpoint(cwd, branch, {
-    task: params.task,
-    files: params.files,
-    todos: params.todos,
-    plan: params.plan ? { path: params.plan.path, content: params.plan.content } : undefined,
-    userDecision: params.userDecision,
-  });
+  // Build updates object based on configuration
+  const updates: Partial<{
+    task: string;
+    files: Handoff["context"]["files"];
+    todos: Handoff["todos"];
+    plan: { path: string; content: string };
+    userDecision: { question: string; answer: string };
+  }> = {};
+
+  // Always allow task updates
+  if (params.task) {
+    updates.task = params.task;
+  }
+
+  // Only include files if trackEdits is enabled
+  if (config.tracking.enabled && config.tracking.trackEdits && params.files) {
+    updates.files = params.files;
+  }
+
+  // Only include todos if trackTodos is enabled
+  if (config.tracking.enabled && config.tracking.trackTodos && params.todos) {
+    updates.todos = params.todos;
+  }
+
+  // Only include plan if trackPlans is enabled
+  if (config.tracking.enabled && config.tracking.trackPlans && params.plan) {
+    updates.plan = { path: params.plan.path, content: params.plan.content };
+  }
+
+  // Only include userDecision if trackUserDecisions is enabled
+  if (config.tracking.enabled && config.tracking.trackUserDecisions && params.userDecision) {
+    updates.userDecision = params.userDecision;
+  }
+
+  const handoff = await updateRollingCheckpoint(cwd, branch, updates);
 
   return {
     id: handoff.id,

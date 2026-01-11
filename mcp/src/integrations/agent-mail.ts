@@ -1,5 +1,3 @@
-import { readFile } from "node:fs/promises";
-import { homedir } from "node:os";
 import { join } from "node:path";
 
 export interface AgentMailInfo {
@@ -17,27 +15,31 @@ interface ClaudeConfig {
   };
 }
 
-// Check if agent mail is configured
+// Check if agent mail is configured using Bun APIs
 export async function isAgentMailConfigured(): Promise<boolean> {
   try {
-    const configPath = join(homedir(), ".claude.json");
-    const content = await readFile(configPath, "utf-8");
-    const config = JSON.parse(content) as ClaudeConfig;
+    const homeDir = Bun.env.HOME || process.env.HOME || "";
+    const configPath = join(homeDir, ".claude.json");
+    const file = Bun.file(configPath);
+    if (!(await file.exists())) return false;
+    const config = (await file.json()) as ClaudeConfig;
     return !!config.mcpServers?.["mcp-agent-mail"]?.url;
   } catch {
     return false;
   }
 }
 
-// Get agent mail config
+// Get agent mail config using Bun APIs
 async function getAgentMailConfig(): Promise<{
   url: string;
   headers?: Record<string, string>;
 } | null> {
   try {
-    const configPath = join(homedir(), ".claude.json");
-    const content = await readFile(configPath, "utf-8");
-    const config = JSON.parse(content) as ClaudeConfig;
+    const homeDir = Bun.env.HOME || process.env.HOME || "";
+    const configPath = join(homeDir, ".claude.json");
+    const file = Bun.file(configPath);
+    if (!(await file.exists())) return null;
+    const config = (await file.json()) as ClaudeConfig;
     const mailConfig = config.mcpServers?.["mcp-agent-mail"];
     if (!mailConfig?.url) return null;
     return { url: mailConfig.url, headers: mailConfig.headers };

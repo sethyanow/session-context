@@ -4,20 +4,24 @@
  * Caches the plan content before exiting plan mode
  */
 
-import { readFile, writeFile, mkdir } from "fs/promises";
-import { join, dirname } from "path";
+import { readFile, writeFile } from "fs/promises";
+import { join } from "path";
 import { homedir } from "os";
-import { createHash } from "crypto";
+import {
+  getOrCreateCheckpoint,
+  getCheckpointPath,
+} from "../mcp/src/utils/checkpoint.js";
 import { Glob } from "bun";
+import { isPlanTrackingEnabled } from "./lib/config.ts";
 
 async function main() {
-  // Get current working directory and project hash
-  const cwd = process.cwd();
-  const projectHash = createHash("sha256").update(cwd).digest("hex").slice(0, 8);
+  // Check if plan tracking is enabled
+  if (!(await isPlanTrackingEnabled())) {
+    process.exit(0);
+  }
 
-  // Storage path
-  const storageDir = join(homedir(), ".claude", "session-context", "handoffs");
-  const checkpointPath = join(storageDir, `${projectHash}-current.json`);
+  // Get current working directory
+  const cwd = process.cwd();
 
   // Find the most recently modified plan file
   const plansDir = join(homedir(), ".claude", "plans");
@@ -48,46 +52,13 @@ async function main() {
     process.exit(0);
   }
 
-  // Ensure storage directory exists
-  await mkdir(storageDir, { recursive: true });
-
-  // Read existing checkpoint
-  let checkpoint: Record<string, unknown>;
-  try {
-    const content = await readFile(checkpointPath, "utf-8");
-    checkpoint = JSON.parse(content);
-  } catch {
-    checkpoint = {
-      id: Math.random().toString(36).slice(2, 7),
-      version: 1,
-      created: new Date().toISOString(),
-      updated: new Date().toISOString(),
-      ttl: "24h",
-      project: {
-        root: cwd,
-        hash: projectHash,
-        branch: "main",
-      },
-      context: {
-        task: "Working on project",
-        summary: "",
-        state: "in_progress",
-        files: [],
-        decisions: [],
-        blockers: [],
-        nextSteps: [],
-        userDecisions: [],
-      },
-      todos: [],
-      references: {},
-    };
-  }
+  // Get or create checkpoint using shared utilities
+  const checkpoint = await getOrCreateCheckpoint(cwd);
 
   // Update checkpoint with plan
   checkpoint.updated = new Date().toISOString();
 
-  const context = checkpoint.context as Record<string, unknown>;
-  context.plan = {
+  checkpoint.context.plan = {
     path: planPath,
     cachedAt: new Date().toISOString(),
     content: planContent,
@@ -95,11 +66,12 @@ async function main() {
 
   // Try to extract task from plan title
   const titleMatch = planContent.match(/^#\s+(.+)$/m);
-  if (titleMatch && (!context.task || context.task === "Working on project")) {
-    context.task = titleMatch[1];
+  if (titleMatch && (!checkpoint.context.task || checkpoint.context.task === "Working on project")) {
+    checkpoint.context.task = titleMatch[1];
   }
 
   // Write updated checkpoint
+  const checkpointPath = getCheckpointPath(cwd);
   await writeFile(checkpointPath, JSON.stringify(checkpoint, null, 2), "utf-8");
 
   // Silent success

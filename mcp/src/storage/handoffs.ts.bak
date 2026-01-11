@@ -3,11 +3,10 @@ import { mkdir, readFile, readdir, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { Handoff, SessionContextConfig } from "../types.js";
-import { withFileLock } from "./lock.js";
 import { shouldExcludeFile } from "../utils/privacy.js";
 
-function getStorageDir(): string { return join(process.env.HOME || homedir(), ".claude", "session-context", "handoffs"); }
-function getConfigPath(): string { return join(process.env.HOME || homedir(), ".claude", "session-context", "config.json"); }
+function getStorageDir(): string { return join(homedir(), ".claude", "session-context", "handoffs"); }
+function getConfigPath(): string { return join(homedir(), ".claude", "session-context", "config.json"); }
 
 // Generate short handoff ID
 export function generateHandoffId(): string {

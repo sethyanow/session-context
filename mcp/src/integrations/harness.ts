@@ -1,4 +1,3 @@
-import { access, readFile } from "node:fs/promises";
 import { join } from "node:path";
 
 export interface HarnessFeature {
@@ -35,21 +34,22 @@ export interface HarnessInfo {
   };
 }
 
-// Helper to read JSON file
+// Helper to read JSON file using Bun APIs
 async function readJsonFile<T>(path: string): Promise<T | null> {
   try {
-    const content = await readFile(path, "utf-8");
-    return JSON.parse(content);
+    const file = Bun.file(path);
+    if (!(await file.exists())) return null;
+    return (await file.json()) as T;
   } catch {
     return null;
   }
 }
 
-// Check if harness is available
+// Check if harness is available using Bun APIs
 export async function isHarnessAvailable(cwd: string): Promise<boolean> {
   try {
-    await access(join(cwd, ".claude-harness"));
-    return true;
+    const harnessDir = Bun.file(join(cwd, ".claude-harness"));
+    return await harnessDir.exists();
   } catch {
     return false;
   }
@@ -61,11 +61,13 @@ export async function getHarnessInfo(cwd: string): Promise<HarnessInfo | null> {
 
   if (!(await isHarnessAvailable(cwd))) return null;
 
-  // Read plugin version
+  // Read plugin version using Bun APIs
   let version: string | null = null;
   try {
-    const content = await readFile(join(harnessDir, ".plugin-version"), "utf-8");
-    version = content.trim();
+    const versionFile = Bun.file(join(harnessDir, ".plugin-version"));
+    if (await versionFile.exists()) {
+      version = (await versionFile.text()).trim();
+    }
   } catch {}
 
   // Count entries in JSON files - handles different array key names
