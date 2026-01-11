@@ -371,7 +371,18 @@ export async function getConfig(): Promise<SessionContextConfig> {
   try {
     const content = await readFile(getConfigPath(), "utf-8");
     const config = JSON.parse(content) as Partial<SessionContextConfig>;
-    return { ...defaults, ...config };
+
+    // Deep merge: merge each section separately
+    return {
+      ...defaults,
+      ...config,
+      tracking: { ...defaults.tracking, ...config.tracking },
+      checkpoints: { ...defaults.checkpoints, ...config.checkpoints },
+      recovery: { ...defaults.recovery, ...config.recovery },
+      marker: { ...defaults.marker, ...config.marker },
+      integrations: { ...defaults.integrations, ...config.integrations },
+      privacy: { ...defaults.privacy, ...config.privacy },
+    };
   } catch {
     return defaults;
   }

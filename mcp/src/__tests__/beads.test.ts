@@ -1,6 +1,4 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdir, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 // Test fixtures
@@ -21,16 +19,18 @@ describe("beads integration", () => {
   let beadsDir: string;
 
   beforeEach(async () => {
-    // Create a unique temp directory for each test
-    testDir = join(tmpdir(), `beads-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    // Create a unique temp directory for each test using Bun APIs
+    const tmpBase = Bun.env.TMPDIR || "/tmp/claude";
+    testDir = join(tmpBase, `beads-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
     beadsDir = join(testDir, ".beads");
-    await mkdir(testDir, { recursive: true });
+    await Bun.write(join(testDir, ".keep"), "");
   });
 
   afterEach(async () => {
-    // Clean up
+    // Clean up using Bun.spawn
     try {
-      await rm(testDir, { recursive: true, force: true });
+      const proc = Bun.spawn(["rm", "-rf", testDir]);
+      await proc.exited;
     } catch {
       // Ignore cleanup errors
     }
@@ -44,7 +44,7 @@ describe("beads integration", () => {
     });
 
     test("returns true when .beads directory exists", async () => {
-      await mkdir(beadsDir, { recursive: true });
+      await Bun.write(join(beadsDir, ".keep"), "");
       const { isBeadsAvailable } = await import("../integrations/beads");
       const result = await isBeadsAvailable(testDir);
       expect(result).toBe(true);
@@ -78,7 +78,7 @@ describe("beads integration", () => {
     });
 
     test("returns zeros when triage fetch fails", async () => {
-      await mkdir(beadsDir, { recursive: true });
+      await Bun.write(join(beadsDir, ".keep"), "");
 
       // Without bv installed, the fetch should fail and return zeros
       const { getBeadsInfo } = await import("../integrations/beads");
@@ -102,7 +102,7 @@ describe("beads integration", () => {
     });
 
     test("returns null when triage fetch fails", async () => {
-      await mkdir(beadsDir, { recursive: true });
+      await Bun.write(join(beadsDir, ".keep"), "");
 
       // Without bv installed, the fetch should fail and return null
       const { getBeadsTriage } = await import("../integrations/beads");

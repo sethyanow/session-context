@@ -66,8 +66,14 @@ export interface BeadsTriage {
 // Check if beads is available in project using Bun APIs
 export async function isBeadsAvailable(cwd: string): Promise<boolean> {
   try {
-    const beadsDir = Bun.file(join(cwd, ".beads"));
-    return await beadsDir.exists();
+    // Check for a marker file within .beads directory since Bun.file() checks files, not directories
+    const markerFile = Bun.file(join(cwd, ".beads", ".keep"));
+    if (await markerFile.exists()) return true;
+
+    // Fallback: check if any file exists in .beads by trying to read the directory
+    const proc = Bun.spawn(["test", "-d", join(cwd, ".beads")]);
+    await proc.exited;
+    return proc.exitCode === 0;
   } catch {
     return false;
   }
