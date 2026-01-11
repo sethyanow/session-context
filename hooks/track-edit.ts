@@ -10,6 +10,8 @@ import {
   getCheckpointPath,
 } from "../mcp/src/utils/checkpoint.js";
 import { isEditTrackingEnabled } from "./lib/config.ts";
+import { shouldExcludeFile } from "../mcp/src/utils/privacy.js";
+import { getConfig } from "../mcp/src/storage/handoffs.js";
 
 // Hook receives: tool_name, tool_input (JSON), tool_output
 const toolName = process.argv[2];
@@ -46,6 +48,12 @@ async function main() {
 
   const filePath = input.file_path;
   if (!filePath) {
+    process.exit(0);
+  }
+
+  // Check privacy exclusions - exit silently if file should be excluded
+  const config = await getConfig();
+  if (shouldExcludeFile(filePath, config.privacy.excludePatterns)) {
     process.exit(0);
   }
 

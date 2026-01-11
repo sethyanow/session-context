@@ -1,12 +1,16 @@
-import { exec } from "node:child_process";
-import { promisify } from "node:util";
-
-const execAsync = promisify(exec);
-
-// Run command and return stdout or null on error
+// Run command using Bun.spawn and return stdout or null on error
 async function runCommand(cmd: string, cwd?: string): Promise<string | null> {
   try {
-    const { stdout } = await execAsync(cmd, { cwd, timeout: 30000 });
+    const args = cmd.split(" ");
+    const proc = Bun.spawn(args, {
+      cwd,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    const stdout = await new Response(proc.stdout).text();
+    await proc.exited;
+
     return stdout.trim();
   } catch {
     return null;

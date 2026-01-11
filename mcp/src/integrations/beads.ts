@@ -1,9 +1,4 @@
-import { exec } from "node:child_process";
-import { access } from "node:fs/promises";
 import { join } from "node:path";
-import { promisify } from "node:util";
-
-const execAsync = promisify(exec);
 
 // Simple cache to avoid duplicate bv --robot-triage calls when both
 // getBeadsInfo and getBeadsTriage are called in parallel
@@ -28,11 +23,19 @@ async function fetchTriageData(cwd: string): Promise<unknown | null> {
     return pendingFetch;
   }
 
-  // Start new fetch
+  // Start new fetch using Bun.spawn
   pendingFetchCwd = cwd;
   pendingFetch = (async () => {
     try {
-      const { stdout } = await execAsync("bv --robot-triage", { cwd, timeout: 30000 });
+      const proc = Bun.spawn(["bv", "--robot-triage"], {
+        cwd,
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+
+      const stdout = await new Response(proc.stdout).text();
+      await proc.exited;
+
       const data = JSON.parse(stdout);
       triageCache = { data, timestamp: Date.now(), cwd };
       return data;
@@ -60,11 +63,11 @@ export interface BeadsTriage {
   triage: unknown;
 }
 
-// Check if beads is available in project
+// Check if beads is available in project using Bun APIs
 export async function isBeadsAvailable(cwd: string): Promise<boolean> {
   try {
-    await access(join(cwd, ".beads"));
-    return true;
+    const beadsDir = Bun.file(join(cwd, ".beads"));
+    return await beadsDir.exists();
   } catch {
     return false;
   }
