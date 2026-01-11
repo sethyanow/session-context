@@ -14,7 +14,7 @@ Session continuity and context recovery for Claude Code. Auto-tracks your work v
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/session-context.git
+git clone https://github.com/sethyanow/session-context.git
 
 # Install dependencies
 cd session-context/mcp
@@ -185,6 +185,17 @@ bun run typecheck
 # Build for distribution
 bun run build
 ```
+
+## Acknowledgments
+
+This plugin builds on and integrates with several excellent projects:
+
+- **[Beads](https://github.com/steveyegge/beads)** by [@steveyegge](https://github.com/steveyegge) - Dependency-aware issue tracking and task management
+- **[Claude Harness](https://github.com/panayiotism/claude-harness)** by [@panayiotism](https://github.com/panayiotism) - Feature tracking and agentic loop management
+- **[Claude-Mem](https://github.com/thedotmack/claude-mem)** by [@thedotmack](https://github.com/thedotmack) - Persistent memory and observation storage
+- **[MCP Agent Mail](https://github.com/Dicklesworthstone/mcp_agent_mail)** by [@Dicklesworthstone](https://github.com/Dicklesworthstone) - Multi-agent coordination and messaging
+
+Thanks to all these maintainers for their work on the Claude Code ecosystem!
 
 ## License
 
