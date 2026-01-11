@@ -1,5 +1,8 @@
 # Session Context Plugin
 
+[![Version](https://img.shields.io/github/v/release/sethyanow/session-context)](https://github.com/sethyanow/session-context/releases)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE.txt)
+
 Session continuity and context recovery for Claude Code. Auto-tracks your work via hooks, survives autocompact, and generates rich continuation prompts.
 
 ## Features
@@ -173,6 +176,10 @@ Data is stored in `~/.claude/session-context/`:
 ```
 
 ## Development
+
+See [DEVELOPMENT.md](DEVELOPMENT.md) for detailed information about the branching strategy, release process, and development workflow.
+
+### Quick Start
 
 ```bash
 # Run the MCP server directly
