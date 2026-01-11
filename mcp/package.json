@@ -6,7 +6,8 @@
   "scripts": {
     "start": "bun src/index.ts",
     "build": "bun build src/index.ts --target=node --outdir=dist",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0"
