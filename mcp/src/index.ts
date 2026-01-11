@@ -230,12 +230,13 @@ async function handleCreateHandoff(params: CreateHandoffParams, cwd: string) {
   const branch = (await getBranch(cwd)) ?? "main";
 
   // Create explicit handoff from rolling checkpoint + overrides
-  const handoff = await createExplicitHandoff(cwd, {
-    task: params.task,
-    summary: params.summary,
-    nextSteps: params.nextSteps,
-    decisions: params.decisions,
-  });
+  // Filter out undefined overrides to avoid overwriting existing context
+  const overrides: Partial<Handoff["context"]> = { task: params.task };
+  if (params.summary !== undefined) overrides.summary = params.summary;
+  if (params.nextSteps !== undefined) overrides.nextSteps = params.nextSteps;
+  if (params.decisions !== undefined) overrides.decisions = params.decisions;
+
+  const handoff = await createExplicitHandoff(cwd, overrides);
 
   // Generate continuation prompt
   const prompt = generateContinuationPrompt(handoff);
