@@ -1,35 +1,30 @@
 #!/usr/bin/env bun
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import {
-  CallToolRequestSchema,
-  ListToolsRequestSchema,
-} from "@modelcontextprotocol/sdk/types.js";
+import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 
 import type {
-  GetSessionStatusParams,
   CreateHandoffParams,
-  UpdateCheckpointParams,
+  GetSessionStatusParams,
   Handoff,
   IntegrationStatus,
+  UpdateCheckpointParams,
 } from "./types.js";
 
 import {
-  readHandoff,
-  getRollingCheckpoint,
-  updateRollingCheckpoint,
-  createExplicitHandoff,
   cleanupExpiredHandoffs,
-  getProjectHash,
-  generateHandoffId,
+  createExplicitHandoff,
   getConfig,
+  getRollingCheckpoint,
+  readHandoff,
+  updateRollingCheckpoint,
 } from "./storage/handoffs.js";
 
-import { getGitInfo, getBranch, isGitRepo } from "./integrations/git.js";
-import { getBeadsInfo, getBeadsTriage, isBeadsAvailable } from "./integrations/beads.js";
-import { getHarnessInfo, isHarnessAvailable } from "./integrations/harness.js";
-import { isClaudeMemAvailable, getClaudeMemRestoreHint } from "./integrations/claude-mem.js";
 import { getAgentMailInfo, isAgentMailConfigured } from "./integrations/agent-mail.js";
+import { getBeadsInfo, getBeadsTriage, isBeadsAvailable } from "./integrations/beads.js";
+import { getClaudeMemRestoreHint, isClaudeMemAvailable } from "./integrations/claude-mem.js";
+import { getBranch, getGitInfo } from "./integrations/git.js";
+import { getHarnessInfo, isHarnessAvailable } from "./integrations/harness.js";
 
 // Create MCP server
 const server = new Server(
@@ -41,7 +36,7 @@ const server = new Server(
     capabilities: {
       tools: {},
     },
-  }
+  },
 );
 
 // Detect available integrations
@@ -87,27 +82,23 @@ function generateContinuationPrompt(handoff: Handoff): string {
   }
 
   if (todos.length > 0) {
-    const inProgress = todos.filter(t => t.status === "in_progress");
-    const pending = todos.filter(t => t.status === "pending");
+    const inProgress = todos.filter((t) => t.status === "in_progress");
+    const pending = todos.filter((t) => t.status === "pending");
     if (inProgress.length > 0 || pending.length > 0) {
       lines.push("", "## Todos");
-      inProgress.forEach(t => lines.push(`- [→] ${t.content}`));
-      pending.slice(0, 3).forEach(t => lines.push(`- [ ] ${t.content}`));
+      inProgress.forEach((t) => lines.push(`- [→] ${t.content}`));
+      pending.slice(0, 3).forEach((t) => lines.push(`- [ ] ${t.content}`));
     }
   }
 
-  lines.push(
-    "",
-    "Run /start to load full context and continue.",
-    `<!-- session:${handoff.id} -->`
-  );
+  lines.push("", "Run /start to load full context and continue.", `<!-- session:${handoff.id} -->`);
 
   return lines.join("\n");
 }
 
 // Tool: get_session_status
 async function handleGetSessionStatus(params: GetSessionStatusParams, cwd: string) {
-  const config = await getConfig();
+  const _config = await getConfig();
   const integrations = await detectIntegrations(cwd);
 
   // Check for handoff recovery
@@ -142,7 +133,7 @@ async function handleGetSessionStatus(params: GetSessionStatusParams, cwd: strin
 
   // Determine sections to include
   if (params.just && params.just.length > 0) {
-    params.just.forEach(s => sections.add(s));
+    params.just.forEach((s) => sections.add(s));
   } else {
     // Level-based sections
     sections.add("project");
@@ -163,7 +154,7 @@ async function handleGetSessionStatus(params: GetSessionStatusParams, cwd: strin
 
     // Add "also" sections
     if (params.also) {
-      params.also.forEach(s => sections.add(s));
+      params.also.forEach((s) => sections.add(s));
     }
   }
 
@@ -191,41 +182,41 @@ async function handleGetSessionStatus(params: GetSessionStatusParams, cwd: strin
 
   if (sections.has("project")) {
     gatherPromises.push(
-      getGitInfo(cwd).then(info => {
+      getGitInfo(cwd).then((info) => {
         if (info) result.project = info;
-      })
+      }),
     );
   }
 
   if (sections.has("harness") && integrations.harness) {
     gatherPromises.push(
-      getHarnessInfo(cwd).then(info => {
+      getHarnessInfo(cwd).then((info) => {
         if (info) result.harness = info;
-      })
+      }),
     );
   }
 
   if (sections.has("beads") && integrations.beads) {
     gatherPromises.push(
-      getBeadsInfo(cwd).then(info => {
+      getBeadsInfo(cwd).then((info) => {
         if (info) result.beads = info;
-      })
+      }),
     );
   }
 
   if (sections.has("beads_triage") && integrations.beads) {
     gatherPromises.push(
-      getBeadsTriage(cwd).then(info => {
+      getBeadsTriage(cwd).then((info) => {
         if (info) result.beads_triage = info;
-      })
+      }),
     );
   }
 
   if (sections.has("agentmail") && integrations.agentMail) {
     gatherPromises.push(
-      getAgentMailInfo(cwd).then(info => {
+      getAgentMailInfo(cwd).then((info) => {
         result.agentmail = info;
-      })
+      }),
     );
   }
 
@@ -236,7 +227,7 @@ async function handleGetSessionStatus(params: GetSessionStatusParams, cwd: strin
 
 // Tool: create_handoff
 async function handleCreateHandoff(params: CreateHandoffParams, cwd: string) {
-  const branch = await getBranch(cwd) ?? "main";
+  const branch = (await getBranch(cwd)) ?? "main";
 
   // Create explicit handoff from rolling checkpoint + overrides
   const handoff = await createExplicitHandoff(cwd, {
@@ -270,7 +261,7 @@ async function handleCreateHandoff(params: CreateHandoffParams, cwd: string) {
 
 // Tool: update_checkpoint
 async function handleUpdateCheckpoint(params: UpdateCheckpointParams, cwd: string) {
-  const branch = await getBranch(cwd) ?? "main";
+  const branch = (await getBranch(cwd)) ?? "main";
 
   const handoff = await updateRollingCheckpoint(cwd, branch, {
     task: params.task,

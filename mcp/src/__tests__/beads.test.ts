@@ -1,7 +1,7 @@
-import { describe, test, expect, mock, beforeEach, afterEach } from "bun:test";
-import { mkdir, rmdir, writeFile, rm } from "fs/promises";
-import { join } from "path";
-import { tmpdir } from "os";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { mkdir, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 // Test fixtures
 const mockTriageData = {
@@ -147,7 +147,8 @@ describe("beads integration", () => {
 
     test("handles missing quick_ref gracefully", () => {
       const triageWithoutQuickRef = { data_hash: "xyz" };
-      const quickRef = (triageWithoutQuickRef as { quick_ref?: Record<string, number> }).quick_ref || {};
+      const quickRef =
+        (triageWithoutQuickRef as { quick_ref?: Record<string, number> }).quick_ref || {};
 
       const extractedCounts = {
         open: quickRef.open_count ?? 0,

@@ -1,6 +1,6 @@
-import { readFile } from "fs/promises";
-import { join } from "path";
-import { homedir } from "os";
+import { readFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { join } from "node:path";
 
 export interface ClaudeMemObservation {
   id: number;

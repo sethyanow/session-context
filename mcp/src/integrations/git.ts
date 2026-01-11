@@ -1,5 +1,5 @@
-import { exec } from "child_process";
-import { promisify } from "util";
+import { exec } from "node:child_process";
+import { promisify } from "node:util";
 
 const execAsync = promisify(exec);
 
@@ -56,18 +56,21 @@ export async function getStatus(cwd: string): Promise<GitStatus | null> {
 }
 
 // Get recent commits
-export async function getRecentCommits(cwd: string, limit = 5): Promise<{ hash: string; message: string; date: string }[]> {
-  const output = await runCommand(
-    `git log --oneline --format="%h|%s|%ci" -n ${limit}`,
-    cwd
-  );
+export async function getRecentCommits(
+  cwd: string,
+  limit = 5,
+): Promise<{ hash: string; message: string; date: string }[]> {
+  const output = await runCommand(`git log --oneline --format="%h|%s|%ci" -n ${limit}`, cwd);
 
   if (!output) return [];
 
-  return output.split("\n").filter(Boolean).map(line => {
-    const [hash, message, date] = line.split("|");
-    return { hash, message, date };
-  });
+  return output
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => {
+      const [hash, message, date] = line.split("|");
+      return { hash, message, date };
+    });
 }
 
 // Get full git info

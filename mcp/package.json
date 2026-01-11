@@ -7,13 +7,25 @@
     "start": "bun src/index.ts",
     "build": "bun build src/index.ts --target=node --outdir=dist",
     "typecheck": "tsc --noEmit",
-    "test": "bun test"
+    "test": "bun test",
+    "lint": "bunx @biomejs/biome check src/",
+    "lint:fix": "bunx @biomejs/biome check --write src/",
+    "format": "bunx @biomejs/biome format --write src/",
+    "check": "bunx @biomejs/biome check --error-on-warnings src/",
+    "prepare": "cd .. && husky mcp/.husky"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0"
   },
   "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
     "@types/bun": "latest",
+    "husky": "^9.1.7",
+    "lint-staged": "^15.2.11",
     "typescript": "^5.0.0"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,js,jsx}": ["bunx @biomejs/biome check --write --no-errors-on-unmatched"],
+    "*.{json,md}": ["bunx @biomejs/biome format --write --no-errors-on-unmatched"]
   }
 }

@@ -1,0 +1,10 @@
+#!/bin/sh
+
+# Navigate to mcp directory for lint-staged
+cd "$(dirname "$0")/.." || exit 1
+
+# Run type check first (fast fail on type errors)
+bun run typecheck || exit 1
+
+# Run lint-staged for formatting/linting
+bunx lint-staged

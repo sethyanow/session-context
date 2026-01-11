@@ -1,7 +1,7 @@
-import { readFile, writeFile, mkdir, readdir, unlink, stat } from "fs/promises";
-import { join } from "path";
-import { homedir } from "os";
-import { createHash } from "crypto";
+import { createHash } from "node:crypto";
+import { mkdir, readFile, readdir, unlink, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import type { Handoff, SessionContextConfig } from "../types.js";
 
 const STORAGE_DIR = join(homedir(), ".claude", "session-context", "handoffs");
@@ -40,9 +40,7 @@ function getHandoffPath(handoffId: string): string {
 // Read a handoff by ID or project hash (for rolling)
 export async function readHandoff(idOrHash: string, isRolling = false): Promise<Handoff | null> {
   try {
-    const path = isRolling
-      ? getRollingCheckpointPath(idOrHash)
-      : getHandoffPath(idOrHash);
+    const path = isRolling ? getRollingCheckpointPath(idOrHash) : getHandoffPath(idOrHash);
     const content = await readFile(path, "utf-8");
     return JSON.parse(content) as Handoff;
   } catch {
@@ -75,7 +73,7 @@ export async function updateRollingCheckpoint(
     todos: Handoff["todos"];
     plan: { path: string; content: string };
     userDecision: { question: string; answer: string };
-  }>
+  }>,
 ): Promise<Handoff> {
   const hash = getProjectHash(projectRoot);
   let handoff = await readHandoff(hash, true);
@@ -121,7 +119,7 @@ export async function updateRollingCheckpoint(
   if (updates.files) {
     // Merge files, updating existing entries
     for (const newFile of updates.files) {
-      const existing = handoff.context.files.find(f => f.path === newFile.path);
+      const existing = handoff.context.files.find((f) => f.path === newFile.path);
       if (existing) {
         existing.role = newFile.role;
       } else {
@@ -156,7 +154,7 @@ export async function updateRollingCheckpoint(
 // Create explicit handoff from rolling checkpoint
 export async function createExplicitHandoff(
   projectRoot: string,
-  overrides: Partial<Handoff["context"]>
+  overrides: Partial<Handoff["context"]>,
 ): Promise<Handoff> {
   const hash = getProjectHash(projectRoot);
   const rolling = await readHandoff(hash, true);
@@ -209,15 +207,20 @@ function parseTTL(ttl: string): number {
   const match = ttl.match(/^(\d+)([hdwm])$/);
   if (!match) return 24 * 60 * 60 * 1000; // Default 24h
 
-  const value = parseInt(match[1], 10);
+  const value = Number.parseInt(match[1], 10);
   const unit = match[2];
 
   switch (unit) {
-    case "h": return value * 60 * 60 * 1000;
-    case "d": return value * 24 * 60 * 60 * 1000;
-    case "w": return value * 7 * 24 * 60 * 60 * 1000;
-    case "m": return value * 30 * 24 * 60 * 60 * 1000;
-    default: return 24 * 60 * 60 * 1000;
+    case "h":
+      return value * 60 * 60 * 1000;
+    case "d":
+      return value * 24 * 60 * 60 * 1000;
+    case "w":
+      return value * 7 * 24 * 60 * 60 * 1000;
+    case "m":
+      return value * 30 * 24 * 60 * 60 * 1000;
+    default:
+      return 24 * 60 * 60 * 1000;
   }
 }
 
@@ -277,9 +280,7 @@ export async function listHandoffs(projectRoot: string): Promise<Handoff[]> {
       }
     }
 
-    return handoffs.sort((a, b) =>
-      new Date(b.updated).getTime() - new Date(a.updated).getTime()
-    );
+    return handoffs.sort((a, b) => new Date(b.updated).getTime() - new Date(a.updated).getTime());
   } catch {
     return [];
   }

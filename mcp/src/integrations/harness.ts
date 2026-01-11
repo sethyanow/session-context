@@ -1,5 +1,5 @@
-import { readFile, access } from "fs/promises";
-import { join } from "path";
+import { access, readFile } from "node:fs/promises";
+import { join } from "node:path";
 
 export interface HarnessFeature {
   id: string;
@@ -59,7 +59,7 @@ export async function isHarnessAvailable(cwd: string): Promise<boolean> {
 export async function getHarnessInfo(cwd: string): Promise<HarnessInfo | null> {
   const harnessDir = join(cwd, ".claude-harness");
 
-  if (!await isHarnessAvailable(cwd)) return null;
+  if (!(await isHarnessAvailable(cwd))) return null;
 
   // Read plugin version
   let version: string | null = null;
@@ -82,22 +82,25 @@ export async function getHarnessInfo(cwd: string): Promise<HarnessInfo | null> {
 
   const failures = await countArrayEntries(
     join(harnessDir, "memory/procedural/failures.json"),
-    "entries", "failures"
+    "entries",
+    "failures",
   );
   const successes = await countArrayEntries(
     join(harnessDir, "memory/procedural/successes.json"),
-    "entries", "successes"
+    "entries",
+    "successes",
   );
   const decisions = await countArrayEntries(
     join(harnessDir, "memory/episodic/decisions.json"),
-    "decisions", "entries"
+    "decisions",
+    "entries",
   );
 
   // Get rules count
   const rulesData = await readJsonFile<{ rules?: { active?: boolean }[] }>(
-    join(harnessDir, "memory/learned/rules.json")
+    join(harnessDir, "memory/learned/rules.json"),
   );
-  const rules = rulesData?.rules?.filter(r => r.active)?.length ?? 0;
+  const rules = rulesData?.rules?.filter((r) => r.active)?.length ?? 0;
 
   // Get loop state
   const loopState = await readJsonFile<{
@@ -125,7 +128,7 @@ export async function getHarnessInfo(cwd: string): Promise<HarnessInfo | null> {
     }[];
   }>(join(harnessDir, "feature-list.json"));
 
-  const featureList: HarnessFeature[] = (featureData?.features ?? []).map(f => ({
+  const featureList: HarnessFeature[] = (featureData?.features ?? []).map((f) => ({
     id: f.id,
     name: f.name,
     passes: f.passes ?? false,
@@ -134,7 +137,7 @@ export async function getHarnessInfo(cwd: string): Promise<HarnessInfo | null> {
 
   const activeFeatureId = loopState?.feature;
   const activeFeature = activeFeatureId
-    ? featureList.find(f => f.id === activeFeatureId) ?? null
+    ? (featureList.find((f) => f.id === activeFeatureId) ?? null)
     : null;
 
   return {

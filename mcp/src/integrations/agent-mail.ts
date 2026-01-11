@@ -1,6 +1,6 @@
-import { readFile } from "fs/promises";
-import { join } from "path";
-import { homedir } from "os";
+import { readFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { join } from "node:path";
 
 export interface AgentMailInfo {
   available: boolean;
@@ -30,7 +30,10 @@ export async function isAgentMailConfigured(): Promise<boolean> {
 }
 
 // Get agent mail config
-async function getAgentMailConfig(): Promise<{ url: string; headers?: Record<string, string> } | null> {
+async function getAgentMailConfig(): Promise<{
+  url: string;
+  headers?: Record<string, string>;
+} | null> {
   try {
     const configPath = join(homedir(), ".claude.json");
     const content = await readFile(configPath, "utf-8");

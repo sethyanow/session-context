@@ -1,7 +1,7 @@
-import { exec } from "child_process";
-import { promisify } from "util";
-import { access } from "fs/promises";
-import { join } from "path";
+import { exec } from "node:child_process";
+import { access } from "node:fs/promises";
+import { join } from "node:path";
+import { promisify } from "node:util";
 
 const execAsync = promisify(exec);
 
@@ -19,9 +19,7 @@ const CACHE_TTL_MS = 5000; // 5 second cache
 
 async function fetchTriageData(cwd: string): Promise<unknown | null> {
   // Check cache first
-  if (triageCache &&
-      triageCache.cwd === cwd &&
-      Date.now() - triageCache.timestamp < CACHE_TTL_MS) {
+  if (triageCache && triageCache.cwd === cwd && Date.now() - triageCache.timestamp < CACHE_TTL_MS) {
     return triageCache.data;
   }
 
@@ -74,9 +72,9 @@ export async function isBeadsAvailable(cwd: string): Promise<boolean> {
 
 // Get basic beads counts by extracting from triage data's quick_ref
 export async function getBeadsInfo(cwd: string): Promise<BeadsInfo | null> {
-  if (!await isBeadsAvailable(cwd)) return null;
+  if (!(await isBeadsAvailable(cwd))) return null;
 
-  const triage = await fetchTriageData(cwd) as { quick_ref?: Record<string, number> } | null;
+  const triage = (await fetchTriageData(cwd)) as { quick_ref?: Record<string, number> } | null;
   if (!triage) {
     return { open: 0, actionable: 0, blocked: 0, in_progress: 0 };
   }
@@ -92,9 +90,9 @@ export async function getBeadsInfo(cwd: string): Promise<BeadsInfo | null> {
 
 // Get full triage data
 export async function getBeadsTriage(cwd: string): Promise<BeadsTriage | null> {
-  if (!await isBeadsAvailable(cwd)) return null;
+  if (!(await isBeadsAvailable(cwd))) return null;
 
-  const triage = await fetchTriageData(cwd) as { data_hash?: string } | null;
+  const triage = (await fetchTriageData(cwd)) as { data_hash?: string } | null;
   if (!triage) return null;
 
   return {
