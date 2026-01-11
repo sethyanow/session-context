@@ -1,5 +1,8 @@
 # Session Context Plugin
 
+[![Version](https://img.shields.io/badge/version-0.0.1-blue.svg)](https://github.com/sethyanow/session-context/releases/tag/v0.0.1)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE.txt)
+
 Session continuity and context recovery for Claude Code. Auto-tracks your work via hooks, survives autocompact, and generates rich continuation prompts.
 
 ## Features
