@@ -1,0 +1,14 @@
+{
+  "name": "session-context",
+  "description": "Session continuity and context recovery for Claude Code. Auto-tracks your work via hooks, survives autocompact, and generates rich continuation prompts.",
+  "version": "1.0.0",
+  "author": {
+    "name": "Samson"
+  },
+  "mcpServers": {
+    "session-context": {
+      "command": "bun",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/mcp/src/index.ts"]
+    }
+  }
+}
