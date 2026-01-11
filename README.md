@@ -177,6 +177,10 @@ Data is stored in `~/.claude/session-context/`:
 
 ## Development
 
+See [DEVELOPMENT.md](DEVELOPMENT.md) for detailed information about the branching strategy, release process, and development workflow.
+
+### Quick Start
+
 ```bash
 # Run the MCP server directly
 cd mcp
