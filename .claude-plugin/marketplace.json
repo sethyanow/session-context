@@ -1,0 +1,15 @@
+{
+  "name": "session-context",
+  "description": "Session continuity and context recovery for Claude Code",
+  "owner": {
+    "name": "Samson"
+  },
+  "plugins": [
+    {
+      "name": "session-context",
+      "source": "./",
+      "description": "Auto-tracks work via hooks, survives autocompact, generates rich continuation prompts",
+      "version": "1.0.0"
+    }
+  ]
+}
