@@ -148,6 +148,21 @@ Agents self-coordinated through incremental git commits, avoiding merge conflict
 
 ---
 
+## [0.0.2] - 2026-01-11
+
+### Added
+- SessionStart hook to enable "." shortcut for invoking `/start` skill
+  - New hook script: `hooks/dot-start-handler.ts`
+  - Automatically injects instruction at session start
+  - Allows users to type "." to trigger `/start` skill invocation
+
+### Changed
+- Updated `hooks/hooks.json` to register SessionStart hook
+  - Added SessionStart section with `startup` matcher
+  - Configured 5-second timeout for hook execution
+
+---
+
 ## Format
 
 ### Types of Changes
