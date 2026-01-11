@@ -6,8 +6,8 @@ import type { Handoff, SessionContextConfig } from "../types.js";
 import { withFileLock } from "./lock.js";
 import { shouldExcludeFile } from "../utils/privacy.js";
 
-function getStorageDir(): string { return join(process.env.HOME || homedir(), ".claude", "session-context", "handoffs"); }
-function getConfigPath(): string { return join(process.env.HOME || homedir(), ".claude", "session-context", "config.json"); }
+function getStorageDir(): string { return process.env.SESSION_CONTEXT_STORAGE_DIR || join(process.env.HOME || homedir(), ".claude", "session-context", "handoffs"); }
+function getConfigPath(): string { return process.env.SESSION_CONTEXT_CONFIG_PATH || join(process.env.HOME || homedir(), ".claude", "session-context", "config.json"); }
 
 // Generate short handoff ID
 export function generateHandoffId(): string {
@@ -45,9 +45,13 @@ function getHandoffPath(handoffId: string, projectHash?: string): string {
 }
 
 // Read a handoff by ID or project hash (for rolling)
-export async function readHandoff(idOrHash: string, isRolling = false): Promise<Handoff | null> {
+export async function readHandoff(
+  idOrHash: string,
+  isRolling = false,
+  projectHash?: string,
+): Promise<Handoff | null> {
   try {
-    const path = isRolling ? getRollingCheckpointPath(idOrHash) : getHandoffPath(idOrHash);
+    const path = isRolling ? getRollingCheckpointPath(idOrHash) : getHandoffPath(idOrHash, projectHash);
     const content = await readFile(path, "utf-8");
     return JSON.parse(content) as Handoff;
   } catch {
@@ -60,7 +64,7 @@ export async function writeHandoff(handoff: Handoff, isRolling = false): Promise
   await ensureStorageDir();
   const path = isRolling
     ? getRollingCheckpointPath(handoff.project.hash)
-    : getHandoffPath(handoff.id);
+    : getHandoffPath(handoff.id, handoff.project.hash);
   await writeFile(path, JSON.stringify(handoff, null, 2), "utf-8");
 }
 
@@ -294,10 +298,25 @@ export async function listHandoffs(projectRoot: string): Promise<Handoff[]> {
     for (const file of files) {
       if (!file.endsWith(".json")) continue;
 
+      // Skip rolling checkpoints (format: {hash}-current.json)
+      if (file.endsWith("-current.json")) continue;
+
+      // Optimization: filter by filename pattern before reading
+      // New format: {projectHash}.{id}.json
+      const isNewFormat = file.startsWith(`${hash}.`);
+
+      // Skip files that definitely don't belong to this project (new format from other projects)
+      // New format files start with an 8-char hex hash followed by a dot
+      if (!isNewFormat && file.match(/^[a-f0-9]{8}\./)) {
+        continue;
+      }
+
       const path = join(getStorageDir(), file);
       try {
         const content = await readFile(path, "utf-8");
         const handoff = JSON.parse(content) as Handoff;
+
+        // For old format files, still need to check the hash from content
         if (handoff.project.hash === hash) {
           handoffs.push(handoff);
         }
