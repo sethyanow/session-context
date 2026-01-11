@@ -2,6 +2,16 @@
 
 This document outlines the branching strategy and development workflow for the session-context project.
 
+## Initial Setup
+
+If the `dev` branch doesn't exist yet, run the setup script after merging this PR to `main`:
+
+```bash
+./scripts/setup-dev-branch.sh
+```
+
+This will create the `dev` branch and push it to GitHub.
+
 ## Branch Structure
 
 ### `main` branch
