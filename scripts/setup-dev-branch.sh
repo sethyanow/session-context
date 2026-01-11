@@ -6,6 +6,33 @@ set -e
 
 echo "🚀 Setting up dev branch..."
 
+# Check if dev branch already exists locally
+if git show-ref --verify --quiet refs/heads/dev; then
+    echo "✅ Dev branch already exists locally"
+    git checkout dev
+    
+    # Check if it exists remotely
+    if git ls-remote --exit-code --heads origin dev >/dev/null 2>&1; then
+        echo "✅ Dev branch already exists on remote. Pulling latest changes..."
+        git pull origin dev
+    else
+        echo "⬆️  Pushing existing local dev branch to GitHub..."
+        git push -u origin dev
+    fi
+    
+    echo "✅ Dev branch setup complete!"
+    exit 0
+fi
+
+# Check if dev branch exists remotely but not locally
+if git ls-remote --exit-code --heads origin dev >/dev/null 2>&1; then
+    echo "📥 Dev branch exists on remote. Checking it out..."
+    git fetch origin dev
+    git checkout -b dev origin/dev
+    echo "✅ Dev branch setup complete!"
+    exit 0
+fi
+
 # Check if we're on main
 current_branch=$(git rev-parse --abbrev-ref HEAD)
 if [ "$current_branch" != "main" ]; then
