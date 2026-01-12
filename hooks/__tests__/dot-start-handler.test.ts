@@ -42,7 +42,9 @@ describe("dot-start-handler hook", () => {
 
     const output = JSON.parse(stdout);
     expect(output.continue).toBe(true);
-    expect(output.systemMessage).toContain(".");
+    expect(output.suppressOutput).toBe(true);
+    // "." instruction moved from systemMessage to additionalContext
+    expect(output.hookSpecificOutput.additionalContext).toContain('period "."');
   });
 
   test("hook includes hookSpecificOutput with additionalContext", async () => {

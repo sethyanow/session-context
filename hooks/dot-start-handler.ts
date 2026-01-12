@@ -89,14 +89,17 @@ async function main() {
   const instruction = {
     continue: true,
     suppressOutput: true,
-    systemMessage: `When the user sends only a period "." as their message, immediately invoke the /start skill using the Skill tool before any other response.
+    hookSpecificOutput: {
+      hookEventName: "SessionStart",
+      additionalContext: `<EXTREMELY_IMPORTANT>
+When the user sends only a period "." as their message, immediately invoke the /start skill using the Skill tool before any other response.
 
 Example:
 user: "."
-assistant: [Invokes Skill tool with skill: "start"]`,
-    hookSpecificOutput: {
-      hookEventName: "SessionStart",
-      additionalContext: `# Pre-loaded Session Status
+assistant: [Invokes Skill tool with skill: "start"]
+</EXTREMELY_IMPORTANT>
+
+# Pre-loaded Session Status
 
 The following session context was gathered at startup. Use this data directly instead of calling get_session_status MCP.
 
@@ -118,7 +121,12 @@ main()
       JSON.stringify({
         continue: true,
         suppressOutput: true,
-        systemMessage: `When the user sends only a period "." as their message, immediately invoke the /start skill using the Skill tool before any other response.`,
+        hookSpecificOutput: {
+          hookEventName: "SessionStart",
+          additionalContext: `<EXTREMELY_IMPORTANT>
+When the user sends only a period "." as their message, immediately invoke the /start skill using the Skill tool before any other response.
+</EXTREMELY_IMPORTANT>`,
+        },
       }),
     );
     process.exit(0);
