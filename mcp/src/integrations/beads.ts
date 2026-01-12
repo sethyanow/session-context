@@ -12,6 +12,13 @@ let pendingFetch: Promise<unknown | null> | null = null;
 let pendingFetchCwd: string | null = null;
 const CACHE_TTL_MS = 5000; // 5 second cache
 
+// Reset cache - exported for testing only
+export function _resetTriageCache(): void {
+  triageCache = null;
+  pendingFetch = null;
+  pendingFetchCwd = null;
+}
+
 async function fetchTriageData(cwd: string): Promise<unknown | null> {
   // Check cache first
   if (triageCache && triageCache.cwd === cwd && Date.now() - triageCache.timestamp < CACHE_TTL_MS) {
@@ -80,15 +87,19 @@ export async function isBeadsAvailable(cwd: string): Promise<boolean> {
 }
 
 // Get basic beads counts by extracting from triage data's quick_ref
+// bv --robot-triage returns: { generated_at, data_hash, triage: { quick_ref: { open_count, ... } } }
 export async function getBeadsInfo(cwd: string): Promise<BeadsInfo | null> {
   if (!(await isBeadsAvailable(cwd))) return null;
 
-  const triage = (await fetchTriageData(cwd)) as { quick_ref?: Record<string, number> } | null;
-  if (!triage) {
+  const response = (await fetchTriageData(cwd)) as {
+    triage?: { quick_ref?: Record<string, number> };
+  } | null;
+  if (!response) {
     return { open: 0, actionable: 0, blocked: 0, in_progress: 0 };
   }
 
-  const quickRef = triage.quick_ref || {};
+  // quick_ref is nested inside response.triage
+  const quickRef = response.triage?.quick_ref || {};
   return {
     open: quickRef.open_count ?? 0,
     actionable: quickRef.actionable_count ?? 0,

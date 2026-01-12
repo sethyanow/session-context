@@ -1,4 +1,4 @@
-import { describe, expect, test, beforeEach, afterEach, spyOn } from "bun:test";
+import { describe, expect, test, beforeEach, afterEach, spyOn, mock } from "bun:test";
 import { mkdir, rm, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -6,6 +6,12 @@ import { randomUUID } from "node:crypto";
 import {
   isPermissionError,
   outputFallbackUsed,
+  queueUpdate,
+  readQueue,
+  removeFromQueue,
+  clearQueue,
+  ensureQueueDir,
+  type QueuedUpdate,
 } from "../lib/fallback-queue.ts";
 
 // Test directories
@@ -99,6 +105,221 @@ describe("fallback-queue", () => {
       }
 
       consoleSpy.mockRestore();
+    });
+  });
+});
+
+// The actual queue directory used by the module
+const ACTUAL_QUEUE_DIR = "/tmp/claude/session-context-queue";
+
+describe("fallback-queue core functions", () => {
+  beforeEach(async () => {
+    await rm(ACTUAL_QUEUE_DIR, { recursive: true, force: true });
+  });
+
+  afterEach(async () => {
+    await rm(ACTUAL_QUEUE_DIR, { recursive: true, force: true });
+  });
+
+  describe("ensureQueueDir", () => {
+    test("creates queue directory if it doesn't exist", async () => {
+      await ensureQueueDir();
+
+      const files = await readdir(ACTUAL_QUEUE_DIR);
+      expect(Array.isArray(files)).toBe(true);
+    });
+
+    test("does not fail if directory already exists", async () => {
+      await mkdir(ACTUAL_QUEUE_DIR, { recursive: true });
+      await expect(ensureQueueDir()).resolves.toBeUndefined();
+    });
+  });
+
+  describe("queueUpdate", () => {
+    test("queues an update and returns ID", async () => {
+      const id = await queueUpdate({
+        projectRoot: "/test/project",
+        updateType: "file",
+        payload: { filePath: "/test/file.ts", role: "modified" },
+      });
+
+      expect(id).toHaveLength(8);
+      expect(id).toMatch(/^[a-f0-9-]+$/);
+
+      const files = await readdir(ACTUAL_QUEUE_DIR);
+      expect(files.length).toBeGreaterThan(0);
+      expect(files[0]).toMatch(/\.json$/);
+    });
+
+    test("creates file with correct structure", async () => {
+      await queueUpdate({
+        projectRoot: "/test/project",
+        updateType: "todo",
+        payload: { todos: [{ content: "Test", status: "pending" }] },
+      });
+
+      const files = await readdir(ACTUAL_QUEUE_DIR);
+      const content = await readFile(join(ACTUAL_QUEUE_DIR, files[0]), "utf-8");
+      const parsed = JSON.parse(content) as QueuedUpdate;
+
+      expect(parsed).toMatchObject({
+        id: expect.any(String),
+        timestamp: expect.any(String),
+        projectRoot: "/test/project",
+        updateType: "todo",
+        payload: { todos: [{ content: "Test", status: "pending" }] },
+      });
+    });
+
+    test("queues multiple updates", async () => {
+      await queueUpdate({ projectRoot: "/p1", updateType: "file", payload: {} });
+      await queueUpdate({ projectRoot: "/p2", updateType: "todo", payload: {} });
+      await queueUpdate({ projectRoot: "/p3", updateType: "plan", payload: {} });
+
+      const files = await readdir(ACTUAL_QUEUE_DIR);
+      expect(files.length).toBe(3);
+    });
+  });
+
+  describe("readQueue", () => {
+    test("returns empty arrays when queue is empty", async () => {
+      await ensureQueueDir();
+      const { updates, files } = await readQueue();
+      expect(updates).toEqual([]);
+      expect(files).toEqual([]);
+    });
+
+    test("reads and parses queued updates", async () => {
+      await queueUpdate({ projectRoot: "/test", updateType: "file", payload: { test: true } });
+      await queueUpdate({ projectRoot: "/test", updateType: "todo", payload: { test: false } });
+
+      const { updates, files } = await readQueue();
+
+      expect(updates).toHaveLength(2);
+      expect(files).toHaveLength(2);
+      expect(updates[0].updateType).toBeDefined();
+    });
+
+    test("sorts updates by timestamp", async () => {
+      await mkdir(ACTUAL_QUEUE_DIR, { recursive: true });
+
+      // Write files with specific timestamps
+      const older: QueuedUpdate = {
+        id: "older111",
+        timestamp: "2026-01-01T00:00:00.000Z",
+        projectRoot: "/test",
+        updateType: "file",
+        payload: {},
+      };
+      const newer: QueuedUpdate = {
+        id: "newer222",
+        timestamp: "2026-01-02T00:00:00.000Z",
+        projectRoot: "/test",
+        updateType: "file",
+        payload: {},
+      };
+
+      await writeFile(
+        join(ACTUAL_QUEUE_DIR, "9999-newer.json"),
+        JSON.stringify(newer),
+        "utf-8"
+      );
+      await writeFile(
+        join(ACTUAL_QUEUE_DIR, "0001-older.json"),
+        JSON.stringify(older),
+        "utf-8"
+      );
+
+      const { updates } = await readQueue();
+
+      expect(updates[0].id).toBe("older111");
+      expect(updates[1].id).toBe("newer222");
+    });
+
+    test("skips invalid JSON files", async () => {
+      await mkdir(ACTUAL_QUEUE_DIR, { recursive: true });
+
+      // Write a valid file
+      await writeFile(
+        join(ACTUAL_QUEUE_DIR, "valid.json"),
+        JSON.stringify({ id: "v1", timestamp: new Date().toISOString(), projectRoot: "/t", updateType: "file", payload: {} }),
+        "utf-8"
+      );
+
+      // Write an invalid file
+      await writeFile(
+        join(ACTUAL_QUEUE_DIR, "invalid.json"),
+        "not valid json {{{",
+        "utf-8"
+      );
+
+      const { updates, files } = await readQueue();
+
+      expect(updates).toHaveLength(1);
+      expect(files).toHaveLength(1);
+    });
+
+    test("skips non-json files", async () => {
+      await mkdir(ACTUAL_QUEUE_DIR, { recursive: true });
+
+      await writeFile(
+        join(ACTUAL_QUEUE_DIR, "valid.json"),
+        JSON.stringify({ id: "v1", timestamp: new Date().toISOString(), projectRoot: "/t", updateType: "file", payload: {} }),
+        "utf-8"
+      );
+      await writeFile(join(ACTUAL_QUEUE_DIR, "readme.txt"), "readme", "utf-8");
+      await writeFile(join(ACTUAL_QUEUE_DIR, ".hidden"), "hidden", "utf-8");
+
+      const { updates, files } = await readQueue();
+
+      expect(updates).toHaveLength(1);
+      expect(files).toHaveLength(1);
+    });
+
+    test("returns empty when queue directory doesn't exist", async () => {
+      const { updates, files } = await readQueue();
+      expect(updates).toEqual([]);
+      expect(files).toEqual([]);
+    });
+  });
+
+  describe("removeFromQueue", () => {
+    test("removes a file from the queue", async () => {
+      await queueUpdate({ projectRoot: "/test", updateType: "file", payload: {} });
+
+      const files = await readdir(ACTUAL_QUEUE_DIR);
+      expect(files).toHaveLength(1);
+
+      await removeFromQueue(files[0]);
+
+      const remainingFiles = await readdir(ACTUAL_QUEUE_DIR);
+      expect(remainingFiles).toHaveLength(0);
+    });
+
+    test("does not throw if file doesn't exist", async () => {
+      await ensureQueueDir();
+      await expect(removeFromQueue("nonexistent.json")).resolves.toBeUndefined();
+    });
+  });
+
+  describe("clearQueue", () => {
+    test("removes all files from queue and returns count", async () => {
+      await queueUpdate({ projectRoot: "/p1", updateType: "file", payload: {} });
+      await queueUpdate({ projectRoot: "/p2", updateType: "todo", payload: {} });
+      await queueUpdate({ projectRoot: "/p3", updateType: "plan", payload: {} });
+
+      const count = await clearQueue();
+
+      expect(count).toBe(3);
+
+      const files = await readdir(ACTUAL_QUEUE_DIR);
+      expect(files).toHaveLength(0);
+    });
+
+    test("returns 0 for empty queue", async () => {
+      await ensureQueueDir();
+      const count = await clearQueue();
+      expect(count).toBe(0);
     });
   });
 });

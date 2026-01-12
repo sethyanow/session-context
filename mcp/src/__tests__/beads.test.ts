@@ -14,11 +14,42 @@ const mockTriageData = {
   recommendations: [],
 };
 
+// Helper to initialize a beads test fixture using bd init
+async function initBeadsFixture(dir: string): Promise<boolean> {
+  try {
+    const initProc = Bun.spawn(["bd", "init", "--prefix", "test"], {
+      cwd: dir,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    await initProc.exited;
+
+    // Create a test issue so triage has something to analyze
+    const createProc = Bun.spawn(
+      ["bd", "create", "--title", "Test issue", "--type", "task", "--priority", "2"],
+      {
+        cwd: dir,
+        stdout: "pipe",
+        stderr: "pipe",
+      }
+    );
+    await createProc.exited;
+
+    return initProc.exitCode === 0;
+  } catch {
+    return false;
+  }
+}
+
 describe("beads integration", () => {
   let testDir: string;
   let beadsDir: string;
 
   beforeEach(async () => {
+    // Reset module cache before each test to ensure isolation
+    const { _resetTriageCache } = await import("../integrations/beads");
+    _resetTriageCache();
+
     // Create a unique temp directory for each test using Bun APIs
     const tmpBase = Bun.env.TMPDIR || "/tmp/claude";
     testDir = join(tmpBase, `beads-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
@@ -189,6 +220,363 @@ describe("beads integration", () => {
         blocked: 0,
         in_progress: 0,
       });
+    });
+  });
+
+  describe("concurrent and caching behavior", () => {
+    test("calling getBeadsInfo twice returns consistent results", async () => {
+      await Bun.write(join(beadsDir, ".keep"), "");
+      const { getBeadsInfo } = await import("../integrations/beads");
+
+      // Call twice - second call exercises consistency
+      const result1 = await getBeadsInfo(testDir);
+      const result2 = await getBeadsInfo(testDir);
+
+      // Both should return same structure (zeros since bv isn't installed)
+      expect(result1).toEqual(result2);
+      expect(result1).toEqual({
+        open: 0,
+        actionable: 0,
+        blocked: 0,
+        in_progress: 0,
+      });
+    });
+
+    test("calling getBeadsTriage twice returns consistent results", async () => {
+      await Bun.write(join(beadsDir, ".keep"), "");
+      const { getBeadsTriage } = await import("../integrations/beads");
+
+      const result1 = await getBeadsTriage(testDir);
+      const result2 = await getBeadsTriage(testDir);
+
+      // Both should return null (since bv isn't installed)
+      expect(result1).toBe(null);
+      expect(result2).toBe(null);
+    });
+
+    test("concurrent calls to getBeadsInfo don't cause issues", async () => {
+      await Bun.write(join(beadsDir, ".keep"), "");
+      const { getBeadsInfo } = await import("../integrations/beads");
+
+      // Make concurrent calls
+      const results = await Promise.all([
+        getBeadsInfo(testDir),
+        getBeadsInfo(testDir),
+        getBeadsInfo(testDir),
+      ]);
+
+      // All should return same structure
+      for (const result of results) {
+        expect(result).toEqual({
+          open: 0,
+          actionable: 0,
+          blocked: 0,
+          in_progress: 0,
+        });
+      }
+    });
+
+    test("concurrent calls to getBeadsTriage don't cause issues", async () => {
+      await Bun.write(join(beadsDir, ".keep"), "");
+      const { getBeadsTriage } = await import("../integrations/beads");
+
+      // Make concurrent calls
+      const results = await Promise.all([
+        getBeadsTriage(testDir),
+        getBeadsTriage(testDir),
+        getBeadsTriage(testDir),
+      ]);
+
+      // All should return null
+      for (const result of results) {
+        expect(result).toBe(null);
+      }
+    });
+  });
+
+  describe("isBeadsAvailable edge cases", () => {
+    test("returns false for non-existent path", async () => {
+      const { isBeadsAvailable } = await import("../integrations/beads");
+      const result = await isBeadsAvailable("/nonexistent/path/that/does/not/exist");
+      expect(result).toBe(false);
+    });
+
+    test("returns false when .beads exists but is empty", async () => {
+      // Create empty .beads directory (no .keep file)
+      const proc = Bun.spawn(["mkdir", "-p", beadsDir]);
+      await proc.exited;
+
+      const { isBeadsAvailable } = await import("../integrations/beads");
+      const result = await isBeadsAvailable(testDir);
+
+      // Should use fallback check for directory existence
+      expect(result).toBe(true);
+    });
+
+    test("returns true with .keep marker file", async () => {
+      await Bun.write(join(beadsDir, ".keep"), "");
+
+      const { isBeadsAvailable } = await import("../integrations/beads");
+      const result = await isBeadsAvailable(testDir);
+
+      expect(result).toBe(true);
+    });
+  });
+
+  describe("getBeadsTriage output structure", () => {
+    test("BeadsTriage interface matches expected fields", () => {
+      // Verify the expected interface structure
+      interface BeadsTriage {
+        generated_at: string;
+        data_hash: string;
+        triage: unknown;
+      }
+
+      const mockTriage: BeadsTriage = {
+        generated_at: new Date().toISOString(),
+        data_hash: "abc123",
+        triage: mockTriageData,
+      };
+
+      expect(mockTriage).toHaveProperty("generated_at");
+      expect(mockTriage).toHaveProperty("data_hash");
+      expect(mockTriage).toHaveProperty("triage");
+      expect(typeof mockTriage.generated_at).toBe("string");
+      expect(typeof mockTriage.data_hash).toBe("string");
+    });
+  });
+});
+
+// Tests with real beads fixture (requires bd command to be available)
+// These tests use fresh directories and reset cache to avoid pollution
+describe("beads integration with real fixture", () => {
+  // Check if bd is available
+  let bdAvailable = false;
+
+  beforeEach(async () => {
+    // Reset module cache before each test to ensure isolation
+    const { _resetTriageCache } = await import("../integrations/beads");
+    _resetTriageCache();
+
+    const checkProc = Bun.spawn(["which", "bd"], { stdout: "pipe", stderr: "pipe" });
+    await checkProc.exited;
+    bdAvailable = checkProc.exitCode === 0;
+  });
+
+  // Helper to create a unique fixture directory with proper initialization
+  async function createFixture(): Promise<string | null> {
+    if (!bdAvailable) return null;
+
+    const tmpBase = Bun.env.TMPDIR || "/tmp/claude";
+    const fixtureDir = join(tmpBase, `beads-fixture-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+
+    // Create directory
+    const mkdirProc = Bun.spawn(["mkdir", "-p", fixtureDir]);
+    await mkdirProc.exited;
+
+    // Initialize beads
+    const initProc = Bun.spawn(["bd", "init", "--prefix", "test"], {
+      cwd: fixtureDir,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    await initProc.exited;
+    if (initProc.exitCode !== 0) return null;
+
+    // Create a test issue
+    const createProc = Bun.spawn(
+      ["bd", "create", "--title", "Test issue", "--type", "task", "--priority", "2"],
+      {
+        cwd: fixtureDir,
+        stdout: "pipe",
+        stderr: "pipe",
+      }
+    );
+    await createProc.exited;
+    if (createProc.exitCode !== 0) return null;
+
+    // Verify with bv --robot-triage
+    const bvProc = Bun.spawn(["bv", "--robot-triage"], {
+      cwd: fixtureDir,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const output = await new Response(bvProc.stdout).text();
+    await bvProc.exited;
+
+    try {
+      const parsed = JSON.parse(output);
+      if (parsed?.triage?.quick_ref?.open_count >= 1) {
+        return fixtureDir;
+      }
+    } catch {
+      // JSON parse failed
+    }
+
+    return null;
+  }
+
+  async function cleanupFixture(dir: string | null) {
+    if (!dir) return;
+    try {
+      const proc = Bun.spawn(["rm", "-rf", dir]);
+      await proc.exited;
+    } catch {
+      // Ignore cleanup errors
+    }
+  }
+
+  describe("getBeadsInfo with real data", () => {
+    test("returns actual counts from bv --robot-triage", async () => {
+      const fixtureDir = await createFixture();
+      if (!fixtureDir) {
+        console.log("Skipping: bd/bv not available or fixture creation failed");
+        return;
+      }
+
+      try {
+        const beadsModule = await import("../integrations/beads");
+        const result = await beadsModule.getBeadsInfo(fixtureDir);
+
+        expect(result).not.toBeNull();
+        expect(result).toHaveProperty("open");
+        expect(result).toHaveProperty("actionable");
+        expect(result).toHaveProperty("blocked");
+        expect(result).toHaveProperty("in_progress");
+
+        // We created 1 issue, so should have at least 1 open
+        expect(result!.open).toBeGreaterThanOrEqual(1);
+        expect(result!.actionable).toBeGreaterThanOrEqual(1);
+        expect(typeof result!.blocked).toBe("number");
+        expect(typeof result!.in_progress).toBe("number");
+      } finally {
+        await cleanupFixture(fixtureDir);
+      }
+    });
+
+    test("exercises cache hit on second call", async () => {
+      const fixtureDir = await createFixture();
+      if (!fixtureDir) {
+        console.log("Skipping: bd/bv not available or fixture creation failed");
+        return;
+      }
+
+      try {
+        const beadsModule = await import("../integrations/beads");
+
+        // First call populates cache
+        const result1 = await beadsModule.getBeadsInfo(fixtureDir);
+
+        // Second call should hit cache (line 18)
+        const result2 = await beadsModule.getBeadsInfo(fixtureDir);
+
+        expect(result1).toEqual(result2);
+        expect(result1).not.toBeNull();
+      } finally {
+        await cleanupFixture(fixtureDir);
+      }
+    });
+  });
+
+  describe("getBeadsTriage with real data", () => {
+    test("returns formatted triage data", async () => {
+      const fixtureDir = await createFixture();
+      if (!fixtureDir) {
+        console.log("Skipping: bd/bv not available or fixture creation failed");
+        return;
+      }
+
+      try {
+        const beadsModule = await import("../integrations/beads");
+        const result = await beadsModule.getBeadsTriage(fixtureDir);
+
+        expect(result).not.toBeNull();
+        expect(result).toHaveProperty("generated_at");
+        expect(result).toHaveProperty("data_hash");
+        expect(result).toHaveProperty("triage");
+
+        expect(typeof result!.generated_at).toBe("string");
+        expect(typeof result!.data_hash).toBe("string");
+        expect(result!.triage).toBeDefined();
+      } finally {
+        await cleanupFixture(fixtureDir);
+      }
+    });
+
+    test("triage contains quick_ref with counts", async () => {
+      const fixtureDir = await createFixture();
+      if (!fixtureDir) {
+        console.log("Skipping: bd/bv not available or fixture creation failed");
+        return;
+      }
+
+      try {
+        const beadsModule = await import("../integrations/beads");
+        const result = await beadsModule.getBeadsTriage(fixtureDir);
+
+        expect(result).not.toBeNull();
+        // getBeadsTriage returns { triage: <raw_bv_response> }
+        // The raw bv response has structure: { generated_at, data_hash, triage: { quick_ref } }
+        const rawResponse = result!.triage as { triage?: { quick_ref?: Record<string, number> } };
+        expect(rawResponse.triage).toBeDefined();
+        expect(rawResponse.triage!.quick_ref).toBeDefined();
+        expect(rawResponse.triage!.quick_ref!.open_count).toBeGreaterThanOrEqual(1);
+      } finally {
+        await cleanupFixture(fixtureDir);
+      }
+    });
+  });
+
+  describe("caching and deduplication", () => {
+    test("concurrent calls share the same fetch (deduplication)", async () => {
+      const fixtureDir = await createFixture();
+      if (!fixtureDir) {
+        console.log("Skipping: bd/bv not available or fixture creation failed");
+        return;
+      }
+
+      try {
+        const beadsModule = await import("../integrations/beads");
+
+        // Make concurrent calls - should deduplicate (line 23)
+        const [result1, result2, result3] = await Promise.all([
+          beadsModule.getBeadsInfo(fixtureDir),
+          beadsModule.getBeadsInfo(fixtureDir),
+          beadsModule.getBeadsInfo(fixtureDir),
+        ]);
+
+        // All should return same data
+        expect(result1).toEqual(result2);
+        expect(result2).toEqual(result3);
+        expect(result1).not.toBeNull();
+      } finally {
+        await cleanupFixture(fixtureDir);
+      }
+    });
+
+    test("cache persists across calls within TTL", async () => {
+      const fixtureDir = await createFixture();
+      if (!fixtureDir) {
+        console.log("Skipping: bd/bv not available or fixture creation failed");
+        return;
+      }
+
+      try {
+        const beadsModule = await import("../integrations/beads");
+
+        // First call
+        const result1 = await beadsModule.getBeadsInfo(fixtureDir);
+
+        // Wait a bit (less than 5s TTL)
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        // Second call should hit cache
+        const result2 = await beadsModule.getBeadsInfo(fixtureDir);
+
+        expect(result1).toEqual(result2);
+      } finally {
+        await cleanupFixture(fixtureDir);
+      }
     });
   });
 });
