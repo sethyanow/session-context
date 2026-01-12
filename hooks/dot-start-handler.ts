@@ -88,6 +88,7 @@ async function main() {
   // This is the only way to pass custom data that Claude Code will recognize
   const instruction = {
     continue: true,
+    suppressOutput: true,
     systemMessage: `When the user sends only a period "." as their message, immediately invoke the /start skill using the Skill tool before any other response.
 
 Example:
@@ -116,6 +117,7 @@ main()
     console.log(
       JSON.stringify({
         continue: true,
+        suppressOutput: true,
         systemMessage: `When the user sends only a period "." as their message, immediately invoke the /start skill using the Skill tool before any other response.`,
       }),
     );
