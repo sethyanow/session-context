@@ -43,12 +43,30 @@ This generates a continuation prompt you can paste into your next session.
 
 ## How It Works
 
+### Pre-loaded Session Context
+
+At session start, the plugin's `SessionStart` hook automatically gathers and injects session context directly into the conversation. This means:
+
+- **No MCP call needed** - Session data is pre-loaded before `/start` runs
+- **Faster startup** - Context is immediately available
+- **Token efficient** - Eliminates round-trip to MCP server
+
+The hook gathers:
+- Git status (branch, uncommitted files, recent commits)
+- Beads triage (if `.beads/` exists)
+- Harness state (if `.claude-harness/` exists)
+- Agent Mail status (if configured)
+- Recovery checkpoint info (if available)
+
+When you run `/start`, it uses this pre-loaded data directly instead of calling the MCP.
+
 ### Automatic Tracking
 
 The plugin installs hooks that capture your work:
 
 | Hook | Trigger | Captures |
 |------|---------|----------|
+| `dot-start-handler.ts` | SessionStart | Pre-loads session context |
 | `track-edit.ts` | Edit, Write, NotebookEdit | Modified file paths |
 | `track-todos.ts` | TodoWrite | Current todo list |
 | `track-plan.ts` | ExitPlanMode | Full plan content |
@@ -83,6 +101,8 @@ The plugin provides three MCP tools:
 ### `get_session_status`
 
 Gather session startup data with optional handoff recovery.
+
+> **Note:** Session data is typically pre-loaded by the `SessionStart` hook, making this call unnecessary for normal startup. Use this MCP tool as a fallback or when you need to restore a specific handoff.
 
 ```typescript
 get_session_status({
