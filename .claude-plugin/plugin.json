@@ -5,6 +5,7 @@
   "author": {
     "name": "Samson"
   },
+  "hooks": "./hooks/hooks.json",
   "mcpServers": {
     "session-context": {
       "command": "bun",
