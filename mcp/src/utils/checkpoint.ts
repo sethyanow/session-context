@@ -68,7 +68,11 @@ export function getProjectHash(projectRoot: string): string {
  * @param baseDir - Optional base directory (defaults to user's home directory)
  */
 export function getStorageDir(baseDir?: string): string {
-  const base = baseDir || homedir();
+  // Check environment variable first for test isolation
+  if (process.env.SESSION_CONTEXT_STORAGE_DIR) {
+    return process.env.SESSION_CONTEXT_STORAGE_DIR;
+  }
+  const base = baseDir || process.env.HOME || homedir();
   return join(base, ".claude", "session-context", "handoffs");
 }
 
