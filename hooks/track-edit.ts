@@ -2,9 +2,11 @@
 /**
  * PostToolUse hook for Edit/Write/NotebookEdit
  * Tracks file modifications in the rolling checkpoint
+ *
+ * Fallback: If direct write fails (sandbox), queues for MCP processing
  */
 
-import { writeFile } from "fs/promises";
+import { writeFile } from "node:fs/promises";
 import {
   getOrCreateCheckpoint,
   getCheckpointPath,
@@ -12,11 +14,15 @@ import {
 import { isEditTrackingEnabled } from "./lib/config.ts";
 import { shouldExcludeFile } from "../mcp/src/utils/privacy.js";
 import { getConfig } from "../mcp/src/storage/handoffs.js";
+import {
+  queueUpdate,
+  isPermissionError,
+  outputFallbackUsed,
+} from "./lib/fallback-queue.ts";
 
 // Hook receives: tool_name, tool_input (JSON), tool_output
 const toolName = process.argv[2];
 const toolInput = process.argv[3];
-const toolOutput = process.argv[4];
 
 interface ToolInputEdit {
   file_path: string;
@@ -68,31 +74,45 @@ async function main() {
   // Get current working directory
   const cwd = process.cwd();
 
-  // Get or create checkpoint using shared utilities
-  const checkpoint = await getOrCreateCheckpoint(cwd);
+  try {
+    // Try direct write first
+    const checkpoint = await getOrCreateCheckpoint(cwd);
+    checkpoint.updated = new Date().toISOString();
 
-  // Update checkpoint
-  checkpoint.updated = new Date().toISOString();
+    // Ensure context.files exists
+    if (!Array.isArray(checkpoint.context.files)) {
+      checkpoint.context.files = [];
+    }
 
-  // Ensure context.files exists
-  if (!Array.isArray(checkpoint.context.files)) {
-    checkpoint.context.files = [];
+    // Update or add file entry
+    const existingIndex = checkpoint.context.files.findIndex((f) => f.path === filePath);
+    if (existingIndex >= 0) {
+      checkpoint.context.files[existingIndex].role = role;
+    } else {
+      checkpoint.context.files.push({ path: filePath, role });
+    }
+
+    // Write updated checkpoint
+    const checkpointPath = getCheckpointPath(cwd);
+    await writeFile(checkpointPath, JSON.stringify(checkpoint, null, 2), "utf-8");
+
+    // Silent success
+    process.exit(0);
+  } catch (error) {
+    // If permission error (sandbox), queue for MCP
+    if (isPermissionError(error)) {
+      const queueId = await queueUpdate({
+        projectRoot: cwd,
+        updateType: "file",
+        payload: { filePath, role },
+      });
+      outputFallbackUsed("file", queueId);
+      process.exit(0);
+    }
+
+    // Other errors - silent failure
+    process.exit(0);
   }
-
-  // Update or add file entry
-  const existingIndex = checkpoint.context.files.findIndex(f => f.path === filePath);
-  if (existingIndex >= 0) {
-    checkpoint.context.files[existingIndex].role = role;
-  } else {
-    checkpoint.context.files.push({ path: filePath, role });
-  }
-
-  // Write updated checkpoint
-  const checkpointPath = getCheckpointPath(cwd);
-  await writeFile(checkpointPath, JSON.stringify(checkpoint, null, 2), "utf-8");
-
-  // Silent success - no output
-  process.exit(0);
 }
 
 main().catch(() => process.exit(0));

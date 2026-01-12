@@ -20,6 +20,8 @@ import {
   updateRollingCheckpoint,
 } from "./storage/handoffs.js";
 
+import { processQueue, getQueueStatus } from "./utils/queue-processor.js";
+
 import { getAgentMailInfo, isAgentMailConfigured } from "./integrations/agent-mail.js";
 import { getBeadsInfo, getBeadsTriage, isBeadsAvailable } from "./integrations/beads.js";
 import { getClaudeMemRestoreHint, isClaudeMemAvailable } from "./integrations/claude-mem.js";
@@ -265,6 +267,9 @@ async function handleUpdateCheckpoint(params: UpdateCheckpointParams, cwd: strin
   const config = await getConfig();
   const branch = (await getBranch(cwd)) ?? "main";
 
+  // First, process any queued updates from hooks that couldn't write directly
+  const queueResult = await processQueue();
+
   // Build updates object based on configuration
   const updates: Partial<{
     task: string;
@@ -306,6 +311,20 @@ async function handleUpdateCheckpoint(params: UpdateCheckpointParams, cwd: strin
     updated: handoff.updated,
     files: handoff.context.files.length,
     todos: handoff.todos.length,
+    queueProcessed: queueResult.processed,
+  };
+}
+
+// Tool: process_queue
+async function handleProcessQueue() {
+  const result = await processQueue();
+  const status = await getQueueStatus();
+
+  return {
+    processed: result.processed,
+    errors: result.errors,
+    byProject: result.byProject,
+    remaining: status.pending,
   };
 }
 
@@ -447,6 +466,21 @@ to keep the checkpoint current.`,
           },
         },
       },
+      {
+        name: "process_queue",
+        description: `Process queued updates from hooks that couldn't write directly.
+
+When hooks run in sandboxed environments, they may not be able to write
+to ~/.claude/session-context/. Instead, they queue updates to /tmp/claude/.
+This tool processes that queue and applies updates to the checkpoint.
+
+Called automatically by update_checkpoint, but can be invoked manually
+to process pending updates.`,
+        inputSchema: {
+          type: "object",
+          properties: {},
+        },
+      },
     ],
   };
 });
@@ -469,6 +503,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     case "update_checkpoint":
       result = await handleUpdateCheckpoint(args as unknown as UpdateCheckpointParams, cwd);
       break;
+    case "process_queue":
+      result = await handleProcessQueue();
+      break;
     default:
       throw new Error(`Unknown tool: ${toolName}`);
   }
@@ -483,9 +520,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   };
 });
 
-// Startup: cleanup expired handoffs
+// Startup: cleanup and process queue
 async function main() {
+  // Cleanup expired handoffs
   await cleanupExpiredHandoffs();
+
+  // Process any queued updates from hooks that ran before MCP started
+  const queueResult = await processQueue();
+  if (queueResult.processed > 0) {
+    console.error(`Processed ${queueResult.processed} queued updates from hooks`);
+  }
 
   const transport = new StdioServerTransport();
   await server.connect(transport);
