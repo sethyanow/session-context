@@ -5,6 +5,9 @@ import { join } from "node:path";
 import {
   updateRollingCheckpoint,
   getRollingCheckpoint,
+  getProjectHash,
+  readHandoff,
+  createExplicitHandoff,
 } from "../storage/handoffs.js";
 
 describe("handoffs - race condition testing", () => {
@@ -135,5 +138,73 @@ describe("handoffs - race condition testing", () => {
     expect(checkpoint).not.toBeNull();
     expect(checkpoint?.context.files).toHaveLength(1);
     expect(checkpoint?.context.files[0].role).toBe("modified");
+  });
+});
+
+describe("handoffs - explicit handoff resolution", () => {
+  let testProjectRoot: string;
+  const originalHome = process.env.HOME;
+
+  beforeEach(async () => {
+    testProjectRoot = join(
+      tmpdir(),
+      `handoffs-explicit-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    );
+    await mkdir(testProjectRoot, { recursive: true });
+
+    const testHome = join(testProjectRoot, "home");
+    await mkdir(join(testHome, ".claude", "session-context", "handoffs"), { recursive: true });
+    process.env.HOME = testHome;
+  });
+
+  afterEach(async () => {
+    if (originalHome) {
+      process.env.HOME = originalHome;
+    } else {
+      delete process.env.HOME;
+    }
+
+    try {
+      await rm(testProjectRoot, { recursive: true, force: true });
+    } catch {
+      // Ignore cleanup errors
+    }
+  });
+
+  test("readHandoff with projectHash should find explicit handoff", async () => {
+    // Create a rolling checkpoint first (required for createExplicitHandoff)
+    await updateRollingCheckpoint(testProjectRoot, "main", {
+      task: "Test task for explicit handoff",
+      files: [{ path: "/test/file.ts", role: "modified" }],
+    });
+
+    // Create explicit handoff
+    const handoff = await createExplicitHandoff(testProjectRoot, {
+      task: "Test explicit handoff",
+    });
+
+    expect(handoff).not.toBeNull();
+    expect(handoff.id).toBeDefined();
+
+    // Reading without projectHash should fail (old format lookup)
+    const notFound = await readHandoff(handoff.id);
+    expect(notFound).toBeNull();
+
+    // Reading with projectHash should succeed
+    const projectHash = getProjectHash(testProjectRoot);
+    const found = await readHandoff(handoff.id, false, projectHash);
+    expect(found).not.toBeNull();
+    expect(found?.id).toBe(handoff.id);
+    expect(found?.context.task).toBe("Test explicit handoff");
+  });
+
+  test("getProjectHash should be deterministic", () => {
+    const hash1 = getProjectHash("/some/path");
+    const hash2 = getProjectHash("/some/path");
+    const hash3 = getProjectHash("/different/path");
+
+    expect(hash1).toBe(hash2);
+    expect(hash1).not.toBe(hash3);
+    expect(hash1).toHaveLength(8); // First 8 chars of SHA256 hex
   });
 });

@@ -15,6 +15,7 @@ import {
   cleanupExpiredHandoffs,
   createExplicitHandoff,
   getConfig,
+  getProjectHash,
   getRollingCheckpoint,
   readHandoff,
   updateRollingCheckpoint,
@@ -188,8 +189,9 @@ async function handleGetSessionStatus(params: GetSessionStatusParams, cwd: strin
   let recoveryInfo: { available: boolean; id?: string; age?: string } = { available: false };
 
   if (params.handoff) {
-    // Explicit handoff ID provided
-    recoveredHandoff = await readHandoff(params.handoff);
+    // Explicit handoff ID provided - need projectHash to find the file
+    const projectHash = getProjectHash(cwd);
+    recoveredHandoff = await readHandoff(params.handoff, false, projectHash);
   } else if (params.autoRecover !== false) {
     // Check for rolling checkpoint
     const rolling = await getRollingCheckpoint(cwd);
