@@ -3,20 +3,15 @@
  *
  * When hooks can't write directly (sandbox restrictions), they queue
  * updates to /tmp/claude/session-context-queue/. This processor
- * applies those updates to the actual checkpoint.
+ * applies those updates to the actual checkpoint using updateRollingCheckpoint
+ * for proper file locking and consistency.
  */
 
 import { mkdir, readdir, readFile, unlink } from "node:fs/promises";
 import { join } from "node:path";
-import {
-  getOrCreateCheckpoint,
-  getCheckpointPath,
-  type Checkpoint,
-  type CheckpointFile,
-  type CheckpointUserDecision,
-  type CheckpointPlan,
-} from "./checkpoint.js";
-import { writeFile } from "node:fs/promises";
+import { updateRollingCheckpoint } from "../storage/handoffs.js";
+import type { Handoff, TodoItem, PlanCache, UserDecision } from "../types.js";
+import { getBranch } from "../integrations/git.js";
 
 const QUEUE_DIR = "/tmp/claude/session-context-queue";
 
@@ -34,16 +29,16 @@ interface FilePayload {
 }
 
 interface TodoPayload {
-  todos: Checkpoint["todos"];
+  todos: TodoItem[];
 }
 
 interface PlanPayload {
-  plan: CheckpointPlan;
+  plan: PlanCache;
   taskFromPlan?: string;
 }
 
 interface UserDecisionPayload {
-  decisions: CheckpointUserDecision[];
+  decisions: UserDecision[];
 }
 
 /**
@@ -89,73 +84,66 @@ async function removeFromQueue(filename: string): Promise<void> {
 }
 
 /**
- * Apply a single update to the checkpoint
+ * Convert queued update to updateRollingCheckpoint params
  */
-async function applyUpdate(checkpoint: Checkpoint, update: QueuedUpdate): Promise<void> {
+function convertUpdate(update: QueuedUpdate): Partial<{
+  task: string;
+  files: Handoff["context"]["files"];
+  todos: Handoff["todos"];
+  plan: { path: string; content: string };
+  userDecision: { question: string; answer: string };
+}> {
   switch (update.updateType) {
     case "file": {
       const payload = update.payload as FilePayload;
-      if (!Array.isArray(checkpoint.context.files)) {
-        checkpoint.context.files = [];
-      }
-      const existingIndex = checkpoint.context.files.findIndex(
-        (f: CheckpointFile) => f.path === payload.filePath
-      );
-      if (existingIndex >= 0) {
-        checkpoint.context.files[existingIndex].role = payload.role;
-      } else {
-        checkpoint.context.files.push({ path: payload.filePath, role: payload.role });
-      }
-      break;
+      return {
+        files: [{ path: payload.filePath, role: payload.role }],
+      };
     }
 
     case "todo": {
       const payload = update.payload as TodoPayload;
-      checkpoint.todos = payload.todos;
-
+      const updates: ReturnType<typeof convertUpdate> = {
+        todos: payload.todos,
+      };
       // Infer task from in-progress todo
       const inProgressTodo = payload.todos.find((t) => t.status === "in_progress");
-      if (
-        inProgressTodo &&
-        (!checkpoint.context.task || checkpoint.context.task === "Working on project")
-      ) {
-        checkpoint.context.task = inProgressTodo.content;
+      if (inProgressTodo) {
+        updates.task = inProgressTodo.content;
       }
-      break;
+      return updates;
     }
 
     case "plan": {
       const payload = update.payload as PlanPayload;
-      checkpoint.context.plan = payload.plan;
-
-      if (
-        payload.taskFromPlan &&
-        (!checkpoint.context.task || checkpoint.context.task === "Working on project")
-      ) {
-        checkpoint.context.task = payload.taskFromPlan;
+      const updates: ReturnType<typeof convertUpdate> = {
+        plan: { path: payload.plan.path, content: payload.plan.content },
+      };
+      if (payload.taskFromPlan) {
+        updates.task = payload.taskFromPlan;
       }
-      break;
+      return updates;
     }
 
     case "userDecision": {
       const payload = update.payload as UserDecisionPayload;
-      if (!Array.isArray(checkpoint.context.userDecisions)) {
-        checkpoint.context.userDecisions = [];
+      // Process first decision (updateRollingCheckpoint handles one at a time)
+      if (payload.decisions.length > 0) {
+        const first = payload.decisions[0];
+        return {
+          userDecision: { question: first.question, answer: first.answer },
+        };
       }
-
-      checkpoint.context.userDecisions.push(...payload.decisions);
-
-      // Keep only last 20 decisions
-      if (checkpoint.context.userDecisions.length > 20) {
-        checkpoint.context.userDecisions = checkpoint.context.userDecisions.slice(-20);
-      }
-      break;
+      return {};
     }
+
+    default:
+      return {};
   }
 }
 
 /**
- * Process all queued updates
+ * Process all queued updates using updateRollingCheckpoint for proper locking
  * Returns count of processed updates
  */
 export async function processQueue(): Promise<{
@@ -190,30 +178,28 @@ export async function processQueue(): Promise<{
   // Process each project's updates
   for (const [projectRoot, data] of byProject) {
     try {
-      const checkpoint = await getOrCreateCheckpoint(projectRoot);
+      const branch = (await getBranch(projectRoot)) ?? "main";
 
-      for (const update of data.updates) {
+      // Process each update using updateRollingCheckpoint (with file locking)
+      for (let i = 0; i < data.updates.length; i++) {
+        const update = data.updates[i];
+        const file = data.files[i];
+
         try {
-          await applyUpdate(checkpoint, update);
+          const params = convertUpdate(update);
+          if (Object.keys(params).length > 0) {
+            await updateRollingCheckpoint(projectRoot, branch, params);
+          }
+          await removeFromQueue(file);
           processed++;
         } catch {
           errors++;
         }
       }
 
-      // Save checkpoint once after all updates
-      checkpoint.updated = new Date().toISOString();
-      const checkpointPath = getCheckpointPath(projectRoot);
-      await writeFile(checkpointPath, JSON.stringify(checkpoint, null, 2), "utf-8");
-
-      // Remove processed files
-      for (const file of data.files) {
-        await removeFromQueue(file);
-      }
-
       projectCounts[projectRoot] = data.updates.length;
     } catch (err) {
-      // If we can't write to checkpoint, leave queue files for retry
+      // If we can't process, leave queue files for retry
       errors += data.updates.length;
       console.error(`Failed to process queue for ${projectRoot}:`, err);
     }

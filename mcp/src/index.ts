@@ -53,47 +53,127 @@ async function detectIntegrations(cwd: string): Promise<IntegrationStatus> {
   return { claudeMem, beads, harness, agentMail };
 }
 
-// Generate continuation prompt
+// Extract plan summary: title and first few key points
+function extractPlanSummary(planContent: string): { title: string; points: string[] } | null {
+  if (!planContent) return null;
+
+  const lines = planContent.split("\n");
+  let title = "";
+  const points: string[] = [];
+
+  for (const line of lines) {
+    // Find title (first # heading)
+    if (!title && line.startsWith("# ")) {
+      title = line.slice(2).trim();
+      continue;
+    }
+    // Collect numbered steps or bullet points under ## headings
+    if (line.match(/^(\d+\.|[-*])\s+\S/)) {
+      const point = line.replace(/^(\d+\.|[-*])\s+/, "").trim();
+      if (point.length > 0 && point.length < 100 && points.length < 5) {
+        points.push(point);
+      }
+    }
+    // Stop after we have enough
+    if (points.length >= 5) break;
+  }
+
+  return title ? { title, points } : null;
+}
+
+// Generate continuation prompt with rich context
 function generateContinuationPrompt(handoff: Handoff): string {
-  const { context, todos } = handoff;
+  const { context, todos, project } = handoff;
+  const lines: string[] = [];
 
-  const lines = [
-    `# Continue: ${context.task}`,
-    "",
-    `Resuming session ${handoff.id}.`,
-    "",
-    "## Context",
-    `- Working on: ${context.summary || context.task}`,
-  ];
+  // Header with task
+  const taskTitle = context.task !== "Working on project" ? context.task : context.summary || "Session";
+  lines.push(`# Continue: ${taskTitle}`, "");
 
-  if (context.decisions.length > 0) {
-    lines.push(`- Key decisions: ${context.decisions.slice(0, 2).join("; ")}`);
+  // Summary if different from task
+  if (context.summary && context.summary !== context.task) {
+    lines.push(context.summary, "");
   }
 
-  if (context.blockers.length > 0) {
-    lines.push(`- Blocked on: ${context.blockers.join(", ")}`);
-  } else {
-    lines.push("- Blocked on: Nothing");
+  // Files worked on (concrete, specific)
+  if (context.files.length > 0) {
+    lines.push("## Files");
+    const modified = context.files.filter((f) => f.role === "modified" || f.role === "edited");
+    const created = context.files.filter((f) => f.role === "created");
+    const read = context.files.filter((f) => f.role === "read" || f.role === "reference");
+
+    if (modified.length > 0) {
+      lines.push(`Modified: ${modified.slice(0, 5).map((f) => f.path.split("/").pop()).join(", ")}`);
+    }
+    if (created.length > 0) {
+      lines.push(`Created: ${created.slice(0, 3).map((f) => f.path.split("/").pop()).join(", ")}`);
+    }
+    if (read.length > 0 && modified.length === 0) {
+      lines.push(`Reviewed: ${read.slice(0, 3).map((f) => f.path.split("/").pop()).join(", ")}`);
+    }
+    lines.push("");
   }
 
-  if (context.nextSteps.length > 0) {
-    lines.push("", "## Next Steps");
-    context.nextSteps.slice(0, 3).forEach((step, i) => {
-      lines.push(`${i + 1}. ${step}`);
-    });
-  }
-
-  if (todos.length > 0) {
-    const inProgress = todos.filter((t) => t.status === "in_progress");
-    const pending = todos.filter((t) => t.status === "pending");
-    if (inProgress.length > 0 || pending.length > 0) {
-      lines.push("", "## Todos");
-      inProgress.forEach((t) => lines.push(`- [→] ${t.content}`));
-      pending.slice(0, 3).forEach((t) => lines.push(`- [ ] ${t.content}`));
+  // Plan summary (if available)
+  if (context.plan?.content) {
+    const summary = extractPlanSummary(context.plan.content);
+    if (summary) {
+      lines.push("## Plan");
+      if (summary.title !== taskTitle) {
+        lines.push(summary.title);
+      }
+      if (summary.points.length > 0) {
+        summary.points.forEach((p, i) => lines.push(`${i + 1}. ${p}`));
+      }
+      lines.push("");
     }
   }
 
-  lines.push("", "Run /start to load full context and continue.", `<!-- session:${handoff.id} -->`);
+  // Todos (in progress first, then pending)
+  const inProgress = todos.filter((t) => t.status === "in_progress");
+  const pending = todos.filter((t) => t.status === "pending");
+  if (inProgress.length > 0 || pending.length > 0) {
+    lines.push("## Todos");
+    inProgress.forEach((t) => lines.push(`- [→] ${t.content}`));
+    pending.slice(0, 5).forEach((t) => lines.push(`- [ ] ${t.content}`));
+    lines.push("");
+  }
+
+  // Decisions made (concrete context)
+  if (context.decisions.length > 0) {
+    lines.push("## Decisions");
+    context.decisions.slice(0, 4).forEach((d) => lines.push(`- ${d}`));
+    lines.push("");
+  }
+
+  // User Q&A (recent decisions that shaped the work)
+  if (context.userDecisions && context.userDecisions.length > 0) {
+    lines.push("## User Decisions");
+    context.userDecisions.slice(-3).forEach((ud) => {
+      lines.push(`Q: ${ud.question}`);
+      lines.push(`A: ${ud.answer}`);
+    });
+    lines.push("");
+  }
+
+  // Blockers (if any)
+  if (context.blockers.length > 0) {
+    lines.push("## Blocked On");
+    context.blockers.forEach((b) => lines.push(`- ${b}`));
+    lines.push("");
+  }
+
+  // Next steps (actionable)
+  if (context.nextSteps.length > 0) {
+    lines.push("## Next");
+    context.nextSteps.slice(0, 3).forEach((step, i) => lines.push(`${i + 1}. ${step}`));
+    lines.push("");
+  }
+
+  // Footer
+  lines.push("---");
+  lines.push(`Branch: ${project.branch} | Session: ${handoff.id}`);
+  lines.push("Run /start to load full context.");
 
   return lines.join("\n");
 }
