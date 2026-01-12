@@ -2,6 +2,8 @@
 
 Session continuity and context recovery for Claude Code. Auto-tracks your work via hooks, survives autocompact, and generates rich continuation prompts.
 
+> Note: this is an experimental plugin born from my config. It does work pretty well, but beware of bugs.
+
 ## Features
 
 - **Automatic Tracking**: Hooks capture file edits, todos, plans, and user decisions as you work
