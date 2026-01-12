@@ -64,7 +64,7 @@ export async function getRecentCommits(
   cwd: string,
   limit = 5,
 ): Promise<{ hash: string; message: string; date: string }[]> {
-  const output = await runCommand(`git log --oneline --format="%h|%s|%ci" -n ${limit}`, cwd);
+  const output = await runCommand(`git log --oneline --format=%h|%s|%ci -n ${limit}`, cwd);
 
   if (!output) return [];
 

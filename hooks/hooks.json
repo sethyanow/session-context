@@ -3,12 +3,12 @@
   "hooks": {
     "SessionStart": [
       {
-        "matcher": "startup",
+        "matcher": "*",
         "hooks": [
           {
             "type": "command",
             "command": "bun ${CLAUDE_PLUGIN_ROOT}/hooks/dot-start-handler.ts",
-            "timeout": 5
+            "timeout": 10
           }
         ]
       }

@@ -7,7 +7,31 @@ description: Session startup with context recovery. USE WHEN starting session, a
 
 Gather project context and recover from handoffs automatically.
 
-## Quick Start
+## Data Source Priority
+
+**1. Pre-loaded (preferred)**: Check for "Pre-loaded Session Status" in the SessionStart hook output (appears in system-reminder tags at conversation start with `additionalContext`). If found, parse the JSON code block and use this data directly—no MCP call needed.
+
+**2. MCP fallback**: If no pre-loaded data exists, call `get_session_status` with appropriate level.
+
+Look for a section like this in the startup system-reminders:
+```
+# Pre-loaded Session Status
+
+The following session context was gathered at startup...
+
+```json
+{
+  "level": "standard",
+  "integrations": {...},
+  "recovery": {...},
+  "project": {...},
+  "beads_triage": {...}
+}
+```
+
+The pre-loaded data has the same structure as the MCP response—format and display it the same way.
+
+## Quick Start (MCP Fallback)
 
 ```typescript
 // Fresh session - full context
