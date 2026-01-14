@@ -576,7 +576,6 @@ to keep the checkpoint current.`,
                   content: { type: "string" },
                   status: {
                     type: "string",
-                    enum: ["pending", "in_progress", "completed"],
                   },
                 },
                 required: ["content", "status"],
