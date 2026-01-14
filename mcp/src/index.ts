@@ -484,8 +484,8 @@ Use "autoRecover" (default true) to check for rolling checkpoints.`,
           properties: {
             level: {
               type: "string",
-              description:
-                "Output level: minimal, standard, or full (default: minimal)",
+              enum: ["minimal", "standard", "full"],
+              description: "Output level (default: minimal)",
             },
             also: {
               type: "array",
@@ -576,6 +576,7 @@ to keep the checkpoint current.`,
                   content: { type: "string" },
                   status: {
                     type: "string",
+                    enum: ["pending", "in_progress", "completed"],
                   },
                 },
                 required: ["content", "status"],
