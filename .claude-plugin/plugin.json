@@ -1,7 +1,7 @@
 {
   "name": "session-context",
   "description": "Session continuity and context recovery for Claude Code. Auto-tracks your work via hooks, survives autocompact, and generates rich continuation prompts.",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "author": {
     "name": "Samson"
   },

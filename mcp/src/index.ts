@@ -1,7 +1,10 @@
 #!/usr/bin/env bun
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import {
+  CallToolRequestSchema,
+  ListToolsRequestSchema,
+} from "@modelcontextprotocol/sdk/types.js";
 
 import type {
   CreateHandoffParams,
@@ -23,9 +26,19 @@ import {
 
 import { processQueue, getQueueStatus } from "./utils/queue-processor.js";
 
-import { getAgentMailInfo, isAgentMailConfigured } from "./integrations/agent-mail.js";
-import { getBeadsInfo, getBeadsTriage, isBeadsAvailable } from "./integrations/beads.js";
-import { getClaudeMemRestoreHint, isClaudeMemAvailable } from "./integrations/claude-mem.js";
+import {
+  getAgentMailInfo,
+  isAgentMailConfigured,
+} from "./integrations/agent-mail.js";
+import {
+  getBeadsInfo,
+  getBeadsTriage,
+  isBeadsAvailable,
+} from "./integrations/beads.js";
+import {
+  getClaudeMemRestoreHint,
+  isClaudeMemAvailable,
+} from "./integrations/claude-mem.js";
 import { getBranch, getGitInfo } from "./integrations/git.js";
 import { getHarnessInfo, isHarnessAvailable } from "./integrations/harness.js";
 
@@ -55,7 +68,9 @@ async function detectIntegrations(cwd: string): Promise<IntegrationStatus> {
 }
 
 // Extract plan summary: title and first few key points
-function extractPlanSummary(planContent: string): { title: string; points: string[] } | null {
+function extractPlanSummary(
+  planContent: string,
+): { title: string; points: string[] } | null {
   if (!planContent) return null;
 
   const lines = planContent.split("\n");
@@ -88,7 +103,10 @@ function generateContinuationPrompt(handoff: Handoff): string {
   const lines: string[] = [];
 
   // Header with task
-  const taskTitle = context.task !== "Working on project" ? context.task : context.summary || "Session";
+  const taskTitle =
+    context.task !== "Working on project"
+      ? context.task
+      : context.summary || "Session";
   lines.push(`# Continue: ${taskTitle}`, "");
 
   // Summary if different from task
@@ -99,18 +117,37 @@ function generateContinuationPrompt(handoff: Handoff): string {
   // Files worked on (concrete, specific)
   if (context.files.length > 0) {
     lines.push("## Files");
-    const modified = context.files.filter((f) => f.role === "modified" || f.role === "edited");
+    const modified = context.files.filter(
+      (f) => f.role === "modified" || f.role === "edited",
+    );
     const created = context.files.filter((f) => f.role === "created");
-    const read = context.files.filter((f) => f.role === "read" || f.role === "reference");
+    const read = context.files.filter(
+      (f) => f.role === "read" || f.role === "reference",
+    );
 
     if (modified.length > 0) {
-      lines.push(`Modified: ${modified.slice(0, 5).map((f) => f.path.split("/").pop()).join(", ")}`);
+      lines.push(
+        `Modified: ${modified
+          .slice(0, 5)
+          .map((f) => f.path.split("/").pop())
+          .join(", ")}`,
+      );
     }
     if (created.length > 0) {
-      lines.push(`Created: ${created.slice(0, 3).map((f) => f.path.split("/").pop()).join(", ")}`);
+      lines.push(
+        `Created: ${created
+          .slice(0, 3)
+          .map((f) => f.path.split("/").pop())
+          .join(", ")}`,
+      );
     }
     if (read.length > 0 && modified.length === 0) {
-      lines.push(`Reviewed: ${read.slice(0, 3).map((f) => f.path.split("/").pop()).join(", ")}`);
+      lines.push(
+        `Reviewed: ${read
+          .slice(0, 3)
+          .map((f) => f.path.split("/").pop())
+          .join(", ")}`,
+      );
     }
     lines.push("");
   }
@@ -167,7 +204,9 @@ function generateContinuationPrompt(handoff: Handoff): string {
   // Next steps (actionable)
   if (context.nextSteps.length > 0) {
     lines.push("## Next");
-    context.nextSteps.slice(0, 3).forEach((step, i) => lines.push(`${i + 1}. ${step}`));
+    context.nextSteps
+      .slice(0, 3)
+      .forEach((step, i) => lines.push(`${i + 1}. ${step}`));
     lines.push("");
   }
 
@@ -180,13 +219,18 @@ function generateContinuationPrompt(handoff: Handoff): string {
 }
 
 // Tool: get_session_status
-async function handleGetSessionStatus(params: GetSessionStatusParams, cwd: string) {
+async function handleGetSessionStatus(
+  params: GetSessionStatusParams,
+  cwd: string,
+) {
   const _config = await getConfig();
   const integrations = await detectIntegrations(cwd);
 
   // Check for handoff recovery
   let recoveredHandoff: Handoff | null = null;
-  let recoveryInfo: { available: boolean; id?: string; age?: string } = { available: false };
+  let recoveryInfo: { available: boolean; id?: string; age?: string } = {
+    available: false,
+  };
 
   if (params.handoff) {
     // Explicit handoff ID provided - need projectHash to find the file
@@ -345,7 +389,10 @@ async function handleCreateHandoff(params: CreateHandoffParams, cwd: string) {
 }
 
 // Tool: update_checkpoint
-async function handleUpdateCheckpoint(params: UpdateCheckpointParams, cwd: string) {
+async function handleUpdateCheckpoint(
+  params: UpdateCheckpointParams,
+  cwd: string,
+) {
   const config = await getConfig();
   const branch = (await getBranch(cwd)) ?? "main";
 
@@ -382,7 +429,11 @@ async function handleUpdateCheckpoint(params: UpdateCheckpointParams, cwd: strin
   }
 
   // Only include userDecision if trackUserDecisions is enabled
-  if (config.tracking.enabled && config.tracking.trackUserDecisions && params.userDecision) {
+  if (
+    config.tracking.enabled &&
+    config.tracking.trackUserDecisions &&
+    params.userDecision
+  ) {
     updates.userDecision = params.userDecision;
   }
 
@@ -433,8 +484,8 @@ Use "autoRecover" (default true) to check for rolling checkpoints.`,
           properties: {
             level: {
               type: "string",
-              enum: ["minimal", "standard", "full"],
-              description: "Output level (default: minimal)",
+              description:
+                "Output level: minimal, standard, or full (default: minimal)",
             },
             also: {
               type: "array",
@@ -523,7 +574,10 @@ to keep the checkpoint current.`,
                 type: "object",
                 properties: {
                   content: { type: "string" },
-                  status: { type: "string", enum: ["pending", "in_progress", "completed"] },
+                  status: {
+                    type: "string",
+                    enum: ["pending", "in_progress", "completed"],
+                  },
                 },
                 required: ["content", "status"],
               },
@@ -577,13 +631,22 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   switch (toolName) {
     case "get_session_status":
-      result = await handleGetSessionStatus(args as unknown as GetSessionStatusParams, cwd);
+      result = await handleGetSessionStatus(
+        args as unknown as GetSessionStatusParams,
+        cwd,
+      );
       break;
     case "create_handoff":
-      result = await handleCreateHandoff(args as unknown as CreateHandoffParams, cwd);
+      result = await handleCreateHandoff(
+        args as unknown as CreateHandoffParams,
+        cwd,
+      );
       break;
     case "update_checkpoint":
-      result = await handleUpdateCheckpoint(args as unknown as UpdateCheckpointParams, cwd);
+      result = await handleUpdateCheckpoint(
+        args as unknown as UpdateCheckpointParams,
+        cwd,
+      );
       break;
     case "process_queue":
       result = await handleProcessQueue();
@@ -610,7 +673,9 @@ async function main() {
   // Process any queued updates from hooks that ran before MCP started
   const queueResult = await processQueue();
   if (queueResult.processed > 0) {
-    console.error(`Processed ${queueResult.processed} queued updates from hooks`);
+    console.error(
+      `Processed ${queueResult.processed} queued updates from hooks`,
+    );
   }
 
   const transport = new StdioServerTransport();
