@@ -41,37 +41,32 @@ Create an explicit checkpoint of your current work for seamless continuation in 
 
 ## Output Format
 
+Display the handoff confirmation followed by the continuation prompt:
+
+**Handoff Created: {id}**
+- Task: {task}
+- Files: {count} modified
+- Plan: {plan.path} (cached)
+- Decisions: {count} captured
+- Todos: {count} items ({in_progress} in progress)
+
+**Continuation Prompt** (copy for next session):
+
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│  ✅ HANDOFF CREATED: {id}                                       │
-├─────────────────────────────────────────────────────────────────┤
-│  Task: {task}                                                   │
-│  Files: {count} modified                                        │
-│  Plan: {plan.path} (cached)                                     │
-│  Decisions: {count} captured                                    │
-│  Todos: {count} items ({in_progress} in progress)              │
-├─────────────────────────────────────────────────────────────────┤
-│  📋 CONTINUATION PROMPT                                         │
-│  Copy this for your next session:                               │
-│                                                                  │
-│  ┌─────────────────────────────────────────────────────────┐   │
-│  │ # Continue: {task}                                      │   │
-│  │                                                          │   │
-│  │ Resuming session {id}.                                   │   │
-│  │                                                          │   │
-│  │ ## Context                                               │   │
-│  │ - Working on: {summary}                                  │   │
-│  │ - Key decision: {decisions[0]}                           │   │
-│  │ - Blocked on: {blockers[0] || "Nothing"}                │   │
-│  │                                                          │   │
-│  │ ## Next Steps                                            │   │
-│  │ 1. {nextSteps[0]}                                       │   │
-│  │ 2. {nextSteps[1]}                                       │   │
-│  │                                                          │   │
-│  │ Run /start to load full context and continue.           │   │
-│  │ <!-- session:{id} -->                                   │   │
-│  └─────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────┘
+# Continue: {task}
+
+{summary}
+
+## Context
+- Key decision: {decisions[0]}
+- Blocked on: {blockers[0] || "Nothing"}
+
+## Next
+1. {nextSteps[0]}
+2. {nextSteps[1]}
+
+Run /start to load full context.
+<!-- session:{id} -->
 ```
 
 ## Integration with Harness
