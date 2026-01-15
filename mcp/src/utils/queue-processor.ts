@@ -15,6 +15,9 @@ import { getBranch } from "../integrations/git.js";
 
 const QUEUE_DIR = "/tmp/claude/session-context-queue";
 
+// Queue cleanup configuration
+const MAX_QUEUE_FILE_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours
+
 interface QueuedUpdate {
   id: string;
   timestamp: string;
@@ -236,4 +239,39 @@ export async function getQueueStatus(): Promise<{
     oldestTimestamp: updates.length > 0 ? updates[0].timestamp : null,
     byType,
   };
+}
+
+/**
+ * Clean up orphaned queue files older than MAX_QUEUE_FILE_AGE_MS (24 hours)
+ * Returns the number of files cleaned up
+ */
+export async function cleanupOrphanedQueueFiles(): Promise<number> {
+  try {
+    await mkdir(QUEUE_DIR, { recursive: true });
+    const files = await readdir(QUEUE_DIR);
+    const jsonFiles = files.filter((f) => f.endsWith(".json"));
+    const now = Date.now();
+    let cleaned = 0;
+
+    for (const file of jsonFiles) {
+      try {
+        const content = await readFile(join(QUEUE_DIR, file), "utf-8");
+        const update = JSON.parse(content) as QueuedUpdate;
+        const age = now - new Date(update.timestamp).getTime();
+
+        if (age > MAX_QUEUE_FILE_AGE_MS) {
+          await removeFromQueue(file);
+          cleaned++;
+        }
+      } catch {
+        // If we can't parse the file, it's orphaned - clean it up
+        await removeFromQueue(file);
+        cleaned++;
+      }
+    }
+
+    return cleaned;
+  } catch {
+    return 0;
+  }
 }

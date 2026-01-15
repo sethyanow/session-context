@@ -213,4 +213,56 @@ describe("Handoff -> Session Recovery", () => {
     });
     expect(explicit.ttl).toBe("7d");
   });
+
+  // ===========================================
+  // Branch Switching Tests
+  // ===========================================
+
+  test("updateRollingCheckpoint updates branch when switching", async () => {
+    await updateRollingCheckpoint(testProjectRoot, "main", {
+      task: "On main",
+    });
+
+    let checkpoint = await getRollingCheckpoint(testProjectRoot);
+    expect(checkpoint?.project.branch).toBe("main");
+
+    await updateRollingCheckpoint(testProjectRoot, "feature/auth", {
+      task: "On feature",
+    });
+
+    checkpoint = await getRollingCheckpoint(testProjectRoot);
+    expect(checkpoint?.project.branch).toBe("feature/auth");
+  });
+
+  test("explicit handoff captures current branch at creation time", async () => {
+    await updateRollingCheckpoint(testProjectRoot, "develop", {
+      task: "Dev work",
+    });
+
+    const handoff = await createExplicitHandoff(testProjectRoot, {
+      task: "Dev work",
+    });
+
+    expect(handoff.project.branch).toBe("develop");
+  });
+
+  test("recovery shows correct branch at handoff time, not current branch", async () => {
+    // Create handoff on feature branch
+    await updateRollingCheckpoint(testProjectRoot, "feature/x", {
+      task: "Feature work",
+    });
+    const handoff = await createExplicitHandoff(testProjectRoot, {
+      task: "Feature work",
+    });
+
+    // Simulate branch switch by updating checkpoint with different branch
+    await updateRollingCheckpoint(testProjectRoot, "main", {
+      task: "Back to main",
+    });
+
+    // Recover old handoff - should show original branch
+    const projectHash = getProjectHash(testProjectRoot);
+    const recovered = await readHandoff(handoff.id, false, projectHash);
+    expect(recovered?.project.branch).toBe("feature/x");
+  });
 });

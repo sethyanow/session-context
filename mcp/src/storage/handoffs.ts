@@ -5,6 +5,7 @@ import { join } from "node:path";
 import type { Handoff, SessionContextConfig } from "../types.js";
 import { withFileLock } from "./lock.js";
 import { shouldExcludeFile } from "../utils/privacy.js";
+import { validateHandoff } from "./schema.js";
 
 function getStorageDir(): string { return process.env.SESSION_CONTEXT_STORAGE_DIR || join(process.env.HOME || homedir(), ".claude", "session-context", "handoffs"); }
 function getConfigPath(): string { return process.env.SESSION_CONTEXT_CONFIG_PATH || join(process.env.HOME || homedir(), ".claude", "session-context", "config.json"); }
@@ -53,7 +54,16 @@ export async function readHandoff(
   try {
     const path = isRolling ? getRollingCheckpointPath(idOrHash) : getHandoffPath(idOrHash, projectHash);
     const content = await readFile(path, "utf-8");
-    return JSON.parse(content) as Handoff;
+    const parsed = JSON.parse(content);
+
+    const result = validateHandoff(parsed);
+    if (!result.valid) {
+      // Log validation errors for debugging but don't crash
+      console.warn(`Invalid handoff at ${path}: ${result.errors.join(", ")}`);
+      return null;
+    }
+
+    return result.sanitized!;
   } catch {
     return null;
   }
