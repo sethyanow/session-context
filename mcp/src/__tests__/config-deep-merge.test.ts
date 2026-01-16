@@ -162,7 +162,7 @@ describe("Configuration Deep Merge Behavior", () => {
 
     const config = await getConfig();
 
-    expect(config.marker.frequency).toBe("always");
+    expect(config.marker.frequency).toBe("every_response");
     expect(config.marker.style).toBe("hidden");
   });
 
@@ -202,7 +202,7 @@ describe("Configuration Deep Merge Behavior", () => {
 
     // null is spread over default, so it becomes null (this tests current behavior)
     // In a more robust implementation, null might be filtered out
-    expect(config.tracking.enabled).toBe(null);
+    expect(config.tracking.enabled as unknown as null).toBe(null);
   });
 
   test("version override works", async () => {

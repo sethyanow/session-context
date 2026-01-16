@@ -91,6 +91,31 @@ export interface IntegrationStatus {
   agentMail: boolean;
 }
 
+// Spawn continuation session
+export interface PromptContext {
+  task: string;
+  summary?: string;
+  completed?: string;
+  nextSteps?: string[];
+  files?: Array<{ path: string; role: string }>;
+  todos?: Array<{ content: string; status: string }>;
+  handoffId: string;
+  projectRoot: string;
+}
+
+export interface SpawnSessionParams {
+  task: string;
+  summary?: string;
+  sessionName?: string;
+}
+
+export interface SpawnSessionResult {
+  handoffId: string;
+  sessionName: string;
+  status: "created" | "error";
+  error?: string;
+}
+
 // Config
 export interface SessionContextConfig {
   version: number;

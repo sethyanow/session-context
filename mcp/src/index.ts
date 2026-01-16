@@ -11,6 +11,7 @@ import type {
   GetSessionStatusParams,
   Handoff,
   IntegrationStatus,
+  SpawnSessionParams,
   UpdateCheckpointParams,
 } from "./types.js";
 
@@ -41,6 +42,14 @@ import {
 } from "./integrations/claude-mem.js";
 import { getBranch, getGitInfo } from "./integrations/git.js";
 import { getHarnessInfo, isHarnessAvailable } from "./integrations/harness.js";
+
+// Spawn session helpers
+import { buildContinuationPrompt } from "./utils/prompt-builder.js";
+import { getClaudeMemSummary } from "./utils/claude-mem.js";
+import {
+  generateSessionName,
+  spawnAgentDeckSession,
+} from "./utils/agent-deck.js";
 
 // Create MCP server
 const server = new Server(
@@ -461,6 +470,67 @@ async function handleProcessQueue() {
   };
 }
 
+// Tool: spawn_continuation_session
+async function handleSpawnContinuationSession(
+  params: SpawnSessionParams,
+  cwd: string,
+) {
+  const branch = (await getBranch(cwd)) ?? "main";
+
+  // Try to get claude-mem summary first
+  const claudeMemSummary = await getClaudeMemSummary(cwd);
+
+  // Get rolling checkpoint for additional context
+  const checkpoint = await getRollingCheckpoint(cwd);
+
+  // Build context from claude-mem or fallback to checkpoint
+  const completed = claudeMemSummary?.completed ?? undefined;
+  const nextStepsRaw = claudeMemSummary?.next_steps;
+  const nextSteps = nextStepsRaw
+    ? nextStepsRaw.split(/\n|;/).map((s) => s.trim()).filter(Boolean)
+    : checkpoint?.context.nextSteps;
+
+  // Create explicit handoff for persistence
+  const handoff = await createExplicitHandoff(cwd, {
+    task: params.task,
+    summary: params.summary ?? claudeMemSummary?.request,
+    nextSteps: nextSteps,
+  });
+
+  // Generate session name
+  const sessionName = params.sessionName ?? generateSessionName(params.task, handoff.id);
+
+  // Build inline continuation prompt
+  const prompt = buildContinuationPrompt({
+    task: params.task,
+    summary: params.summary ?? claudeMemSummary?.request,
+    completed,
+    nextSteps,
+    files: checkpoint?.context.files,
+    todos: checkpoint?.todos,
+    handoffId: handoff.id,
+    projectRoot: cwd,
+  });
+
+  // Spawn agent-deck session
+  const result = await spawnAgentDeckSession(sessionName, cwd, prompt);
+
+  if (!result.success) {
+    return {
+      handoffId: handoff.id,
+      sessionName,
+      status: "error" as const,
+      error: result.error,
+    };
+  }
+
+  return {
+    handoffId: handoff.id,
+    sessionName,
+    status: "created" as const,
+  };
+}
+
 // List tools handler
 server.setRequestHandler(ListToolsRequestSchema, async () => {
   return {
@@ -617,6 +687,33 @@ to process pending updates.`,
           properties: {},
         },
       },
+      {
+        name: "spawn_continuation_session",
+        description: `Create a handoff and spawn a new agent-deck session with inline context.
+
+The new session receives the full context inline - ready to work immediately.
+Uses claude-mem summary if available, otherwise falls back to checkpoint data.
+
+Returns the session name for the user to attach in agent-deck.`,
+        inputSchema: {
+          type: "object",
+          properties: {
+            task: {
+              type: "string",
+              description: "Current task description (required)",
+            },
+            summary: {
+              type: "string",
+              description: "Optional summary override",
+            },
+            sessionName: {
+              type: "string",
+              description: "Optional session name override (auto-generated if not provided)",
+            },
+          },
+          required: ["task"],
+        },
+      },
     ],
   };
 });
@@ -650,6 +747,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       break;
     case "process_queue":
       result = await handleProcessQueue();
+      break;
+    case "spawn_continuation_session":
+      result = await handleSpawnContinuationSession(
+        args as unknown as SpawnSessionParams,
+        cwd,
+      );
       break;
     default:
       throw new Error(`Unknown tool: ${toolName}`);
