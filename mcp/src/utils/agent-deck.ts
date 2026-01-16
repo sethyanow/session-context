@@ -22,6 +22,7 @@ export async function isAgentDeckInstalled(): Promise<boolean> {
 
 /**
  * Spawn a new agent-deck session with the given prompt.
+ * Uses start + send pattern since -m flag can hang.
  */
 export async function spawnAgentDeckSession(
   sessionName: string,
@@ -46,15 +47,29 @@ export async function spawnAgentDeckSession(
     }
   }
 
-  // Start session with recovery prompt
+  // Start session (launches Claude in tmux background)
   const startProc = Bun.spawn(
-    ["agent-deck", "session", "start", "-m", recoveryPrompt, sessionName],
+    ["agent-deck", "session", "start", sessionName],
     { stdout: "pipe", stderr: "pipe" },
   );
   await startProc.exited;
   if (startProc.exitCode !== 0) {
     const stderr = await new Response(startProc.stderr).text();
     return { success: false, error: `Failed to start session: ${stderr}` };
+  }
+
+  // Wait a moment for session to initialize
+  await new Promise((resolve) => setTimeout(resolve, 2000));
+
+  // Send the continuation prompt
+  const sendProc = Bun.spawn(
+    ["agent-deck", "session", "send", sessionName, recoveryPrompt],
+    { stdout: "pipe", stderr: "pipe" },
+  );
+  await sendProc.exited;
+  if (sendProc.exitCode !== 0) {
+    const stderr = await new Response(sendProc.stderr).text();
+    return { success: false, error: `Failed to send prompt: ${stderr}` };
   }
 
   return { success: true, sessionName };
