@@ -22,24 +22,52 @@ export interface HarnessLearnedRule {
   scope: string;
 }
 
+export type HarnessVerificationStatus = "passing" | "failing";
+
 export interface HarnessVerification {
-  build?: { status: string; timestamp?: string };
-  tests?: { status: string; timestamp?: string };
-  lint?: { status: string; timestamp?: string };
-  typecheck?: { status: string; timestamp?: string };
+  build?: { status: HarnessVerificationStatus; timestamp?: string };
+  tests?: { status: HarnessVerificationStatus; timestamp?: string };
+  lint?: { status: HarnessVerificationStatus; timestamp?: string };
+  typecheck?: { status: HarnessVerificationStatus; timestamp?: string };
 }
+
+export type HarnessTDDPhase = "red" | "green" | "refactor";
+export type HarnessTDDTestStatus = "failing" | "passing";
 
 export interface HarnessTDD {
   enabled: boolean;
-  phase: string | null; // "red" | "green" | "refactor" | null
+  phase: HarnessTDDPhase | null;
   testsWritten: string[];
-  testStatus: string | null; // "failing" | "passing" | null
+  testStatus: HarnessTDDTestStatus | null;
 }
 
 export interface HarnessLoopHistory {
   attempt: number;
   approach: string;
   result: string;
+}
+
+export type HarnessLoopStatus = "idle" | "in_progress" | "complete" | "escalated";
+export type HarnessLoopType = "feature" | "fix";
+
+// Loop state data structure (v3.0 and legacy combined)
+export interface LoopStateData {
+  version?: number;
+  status?: string;
+  feature?: string;
+  featureName?: string;
+  type?: string;
+  linkedTo?: { featureId?: string | null; featureName?: string | null };
+  attempt?: number;
+  maxAttempts?: number;
+  verification?: HarnessVerification;
+  tdd?: {
+    enabled?: boolean;
+    phase?: string | null;
+    testsWritten?: string[];
+    testStatus?: string | null;
+  };
+  history?: Array<{ attempt?: number; approach?: string; result?: string }>;
 }
 
 export interface HarnessInfo {
@@ -58,10 +86,10 @@ export interface HarnessInfo {
     learnedRules: HarnessLearnedRule[];
   };
   loop: {
-    status: string;
+    status: HarnessLoopStatus;
     feature: string | null;
     featureName: string | null;
-    type: string; // "feature" | "fix"
+    type: HarnessLoopType;
     linkedTo: { featureId: string | null; featureName: string | null } | null;
     attempt: number;
     maxAttempts: number;
@@ -163,26 +191,6 @@ export async function getHarnessInfo(cwd: string): Promise<HarnessInfo | null> {
   const activeRules = rulesData?.rules?.filter((r) => r.active) ?? [];
   const rules = activeRules.length;
 
-  // Loop state type (v3.0 and legacy combined)
-  interface LoopStateData {
-    version?: number;
-    status?: string;
-    feature?: string;
-    featureName?: string;
-    type?: string;
-    linkedTo?: { featureId?: string | null; featureName?: string | null };
-    attempt?: number;
-    maxAttempts?: number;
-    verification?: HarnessVerification;
-    tdd?: {
-      enabled?: boolean;
-      phase?: string | null;
-      testsWritten?: string[];
-      testStatus?: string | null;
-    };
-    history?: Array<{ attempt?: number; approach?: string; result?: string }>;
-  }
-
   // Get loop state - try v3.0 path first, fallback to legacy
   const loopState: LoopStateData | null =
     (await readJsonFile<LoopStateData>(join(harnessDir, "loops/state.json"))) ??
@@ -274,9 +282,9 @@ export async function getHarnessInfo(cwd: string): Promise<HarnessInfo | null> {
   const tdd: HarnessTDD | null = loopState?.tdd
     ? {
         enabled: loopState.tdd.enabled ?? false,
-        phase: loopState.tdd.phase ?? null,
+        phase: (loopState.tdd.phase as HarnessTDDPhase) ?? null,
         testsWritten: loopState.tdd.testsWritten ?? [],
-        testStatus: loopState.tdd.testStatus ?? null,
+        testStatus: (loopState.tdd.testStatus as HarnessTDDTestStatus) ?? null,
       }
     : null;
 
@@ -303,10 +311,10 @@ export async function getHarnessInfo(cwd: string): Promise<HarnessInfo | null> {
       learnedRules,
     },
     loop: {
-      status: loopState?.status ?? "idle",
+      status: (loopState?.status as HarnessLoopStatus) ?? "idle",
       feature: loopState?.feature ?? null,
       featureName: loopState?.featureName ?? null,
-      type: loopState?.type ?? "feature",
+      type: (loopState?.type as HarnessLoopType) ?? "feature",
       linkedTo: loopState?.linkedTo
         ? {
             featureId: loopState.linkedTo.featureId ?? null,
