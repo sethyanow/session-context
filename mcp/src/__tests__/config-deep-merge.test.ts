@@ -156,13 +156,14 @@ describe("Configuration Deep Merge Behavior", () => {
   test("marker config merges with defaults", async () => {
     await writeFile(configPath, JSON.stringify({
       marker: {
-        frequency: "always",
+        frequency: "manual",
       },
     }));
 
     const config = await getConfig();
 
-    expect(config.marker.frequency).toBe("every_response");
+    // User-provided frequency is preserved, default style is applied
+    expect(config.marker.frequency).toBe("manual");
     expect(config.marker.style).toBe("hidden");
   });
 

@@ -7,20 +7,67 @@ export interface HarnessFeature {
   priority: number;
 }
 
+// v3.0 Memory Architecture types
+export interface HarnessDecision {
+  id: string;
+  timestamp: string;
+  feature: string;
+  decision: string;
+}
+
+export interface HarnessLearnedRule {
+  id: string;
+  title: string;
+  description: string;
+  scope: string;
+}
+
+export interface HarnessVerification {
+  build?: { status: string; timestamp?: string };
+  tests?: { status: string; timestamp?: string };
+  lint?: { status: string; timestamp?: string };
+  typecheck?: { status: string; timestamp?: string };
+}
+
+export interface HarnessTDD {
+  enabled: boolean;
+  phase: string | null; // "red" | "green" | "refactor" | null
+  testsWritten: string[];
+  testStatus: string | null; // "failing" | "passing" | null
+}
+
+export interface HarnessLoopHistory {
+  attempt: number;
+  approach: string;
+  result: string;
+}
+
 export interface HarnessInfo {
   version: string | null;
   memoryVersion: number;
   memory: {
+    // Counts (backward compat)
     failures: number;
     successes: number;
     decisions: number;
     rules: number;
+    // Actual content (v3.0)
+    recentDecisions: HarnessDecision[];
+    projectPatterns: string[];
+    avoidApproaches: string[];
+    learnedRules: HarnessLearnedRule[];
   };
   loop: {
     status: string;
     feature: string | null;
+    featureName: string | null;
+    type: string; // "feature" | "fix"
+    linkedTo: { featureId: string | null; featureName: string | null } | null;
     attempt: number;
     maxAttempts: number;
+    verification: HarnessVerification;
+    tdd: HarnessTDD | null;
+    history: HarnessLoopHistory[];
   };
   workingContext: {
     compiledAt: string | null;
@@ -56,6 +103,15 @@ export async function isHarnessAvailable(cwd: string): Promise<boolean> {
     return false;
   }
 }
+
+// Payload size limits to prevent bloated responses
+const LIMITS = {
+  recentDecisions: 5,
+  projectPatterns: 10,
+  avoidApproaches: 5,
+  learnedRules: 10,
+  history: 5,
+} as const;
 
 // Get harness info
 export async function getHarnessInfo(cwd: string): Promise<HarnessInfo | null> {
@@ -100,29 +156,91 @@ export async function getHarnessInfo(cwd: string): Promise<HarnessInfo | null> {
     "entries",
   );
 
-  // Get rules count
-  const rulesData = await readJsonFile<{ rules?: { active?: boolean }[] }>(
-    join(harnessDir, "memory/learned/rules.json"),
-  );
-  const rules = rulesData?.rules?.filter((r) => r.active)?.length ?? 0;
+  // Get rules count and active rules
+  const rulesData = await readJsonFile<{
+    rules?: { id?: string; title?: string; description?: string; scope?: string; active?: boolean }[];
+  }>(join(harnessDir, "memory/learned/rules.json"));
+  const activeRules = rulesData?.rules?.filter((r) => r.active) ?? [];
+  const rules = activeRules.length;
 
-  // Get loop state
-  const loopState = await readJsonFile<{
+  // Loop state type (v3.0 and legacy combined)
+  interface LoopStateData {
+    version?: number;
     status?: string;
     feature?: string;
+    featureName?: string;
+    type?: string;
+    linkedTo?: { featureId?: string | null; featureName?: string | null };
     attempt?: number;
     maxAttempts?: number;
-  }>(join(harnessDir, "loop-state.json"));
+    verification?: HarnessVerification;
+    tdd?: {
+      enabled?: boolean;
+      phase?: string | null;
+      testsWritten?: string[];
+      testStatus?: string | null;
+    };
+    history?: Array<{ attempt?: number; approach?: string; result?: string }>;
+  }
 
-  // Get working context
+  // Get loop state - try v3.0 path first, fallback to legacy
+  const loopState: LoopStateData | null =
+    (await readJsonFile<LoopStateData>(join(harnessDir, "loops/state.json"))) ??
+    (await readJsonFile<LoopStateData>(join(harnessDir, "loop-state.json")));
+
+  // Get working context with relevantMemory (v3.0)
   const workingCtx = await readJsonFile<{
     version?: number;
     computedAt?: string;
     sessionId?: string;
     lastStopEvent?: string;
+    relevantMemory?: {
+      recentDecisions?: Array<{
+        id?: string;
+        timestamp?: string;
+        feature?: string;
+        decision?: string;
+      }>;
+      projectPatterns?: string[];
+      avoidApproaches?: string[];
+      learnedRules?: Array<{
+        id?: string;
+        title?: string;
+        description?: string;
+        scope?: string;
+      }>;
+    };
   }>(join(harnessDir, "memory/working/context.json"));
 
-  // Get feature list
+  // Extract relevantMemory with limits
+  const relevantMemory = workingCtx?.relevantMemory;
+  const recentDecisions: HarnessDecision[] = (relevantMemory?.recentDecisions ?? [])
+    .slice(0, LIMITS.recentDecisions)
+    .map((d) => ({
+      id: d.id ?? "",
+      timestamp: d.timestamp ?? "",
+      feature: d.feature ?? "",
+      decision: d.decision ?? "",
+    }));
+  const projectPatterns = (relevantMemory?.projectPatterns ?? []).slice(0, LIMITS.projectPatterns);
+  const avoidApproaches = (relevantMemory?.avoidApproaches ?? []).slice(0, LIMITS.avoidApproaches);
+  const learnedRules: HarnessLearnedRule[] = (relevantMemory?.learnedRules ?? activeRules)
+    .slice(0, LIMITS.learnedRules)
+    .map((r) => ({
+      id: r.id ?? "",
+      title: r.title ?? "",
+      description: r.description ?? "",
+      scope: r.scope ?? "",
+    }));
+
+  // Get feature list - try v3.0 active.json first, fallback to feature-list.json
+  const activeFeatureData = await readJsonFile<{
+    id?: string;
+    name?: string;
+    passes?: boolean;
+    priority?: number;
+  }>(join(harnessDir, "features/active.json"));
+
   const featureData = await readJsonFile<{
     features?: {
       id: string;
@@ -139,20 +257,67 @@ export async function getHarnessInfo(cwd: string): Promise<HarnessInfo | null> {
     priority: f.priority ?? 0,
   }));
 
-  const activeFeatureId = loopState?.feature;
+  // Determine active feature from loop state or active.json
+  const activeFeatureId = loopState?.feature ?? activeFeatureData?.id;
   const activeFeature = activeFeatureId
-    ? (featureList.find((f) => f.id === activeFeatureId) ?? null)
+    ? activeFeatureData?.id === activeFeatureId
+      ? {
+          id: activeFeatureData.id ?? "",
+          name: activeFeatureData.name ?? "",
+          passes: activeFeatureData.passes ?? false,
+          priority: activeFeatureData.priority ?? 0,
+        }
+      : (featureList.find((f) => f.id === activeFeatureId) ?? null)
     : null;
+
+  // Extract TDD state if present
+  const tdd: HarnessTDD | null = loopState?.tdd
+    ? {
+        enabled: loopState.tdd.enabled ?? false,
+        phase: loopState.tdd.phase ?? null,
+        testsWritten: loopState.tdd.testsWritten ?? [],
+        testStatus: loopState.tdd.testStatus ?? null,
+      }
+    : null;
+
+  // Extract history with limit
+  const history: HarnessLoopHistory[] = (loopState?.history ?? [])
+    .slice(0, LIMITS.history)
+    .map((h) => ({
+      attempt: h.attempt ?? 0,
+      approach: h.approach ?? "",
+      result: h.result ?? "",
+    }));
 
   return {
     version,
     memoryVersion: workingCtx?.version ?? 0,
-    memory: { failures, successes, decisions, rules },
+    memory: {
+      failures,
+      successes,
+      decisions,
+      rules,
+      recentDecisions,
+      projectPatterns,
+      avoidApproaches,
+      learnedRules,
+    },
     loop: {
       status: loopState?.status ?? "idle",
       feature: loopState?.feature ?? null,
+      featureName: loopState?.featureName ?? null,
+      type: loopState?.type ?? "feature",
+      linkedTo: loopState?.linkedTo
+        ? {
+            featureId: loopState.linkedTo.featureId ?? null,
+            featureName: loopState.linkedTo.featureName ?? null,
+          }
+        : null,
       attempt: loopState?.attempt ?? 0,
       maxAttempts: loopState?.maxAttempts ?? 10,
+      verification: loopState?.verification ?? {},
+      tdd,
+      history,
     },
     workingContext: {
       compiledAt: workingCtx?.computedAt ?? null,
