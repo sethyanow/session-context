@@ -50,6 +50,42 @@ export interface HarnessLoopHistory {
 export type HarnessLoopStatus = "idle" | "in_progress" | "complete" | "escalated";
 export type HarnessLoopType = "feature" | "fix";
 
+// v4.4.2 Loop timing fields
+export interface HarnessLoopTiming {
+  startedAt?: string;
+  lastAttemptAt?: string;
+  lastCheckpoint?: string;
+  escalationRequested?: boolean;
+}
+
+// v4.4.2 Agent memory fields
+export interface HarnessAgentMemory {
+  learnedPatterns?: Array<{ id?: string; pattern?: string; successRate?: number }>;
+  successfulApproaches?: Array<{ approach?: string; uses?: number }>;
+  failedApproaches?: Array<{ approach?: string; reason?: string }>;
+  agentPerformance?: {
+    totalTasks?: number;
+    successfulTasks?: number;
+    avgTaskDuration?: number;
+  };
+  codebaseInsights?: {
+    hotspots?: string[];
+    patterns?: string[];
+  };
+}
+
+// v4.4.2 Root working context fields
+export interface HarnessRootWorkingContext {
+  summary?: string;
+  workingFiles?: Array<{ path?: string; role?: string }>;
+  decisions?: Array<{ id?: string; decision?: string; timestamp?: string }>;
+  codebaseUnderstanding?: {
+    architecture?: string;
+    keyDependencies?: string[];
+  };
+  nextSteps?: Array<{ step?: number; action?: string; priority?: string }>;
+}
+
 // Loop state data structure (v3.0 and legacy combined)
 export interface LoopStateData {
   version?: number;
@@ -68,6 +104,11 @@ export interface LoopStateData {
     testStatus?: string | null;
   };
   history?: Array<{ attempt?: number; approach?: string; result?: string }>;
+  // v4.4.2 loop timing fields
+  startedAt?: string;
+  lastAttemptAt?: string;
+  lastCheckpoint?: string;
+  escalationRequested?: boolean;
 }
 
 export interface HarnessInfo {
@@ -96,6 +137,8 @@ export interface HarnessInfo {
     verification: HarnessVerification;
     tdd: HarnessTDD | null;
     history: HarnessLoopHistory[];
+    // v4.4.2 loop timing fields
+    timing: HarnessLoopTiming | null;
   };
   workingContext: {
     compiledAt: string | null;
@@ -107,6 +150,10 @@ export interface HarnessInfo {
     active: HarnessFeature | null;
     list: HarnessFeature[];
   };
+  // v4.4.2 agent memory fields
+  agentMemory: HarnessAgentMemory | null;
+  // v4.4.2 root working context fields
+  rootWorkingContext: HarnessRootWorkingContext | null;
 }
 
 // Helper to read JSON file using Bun APIs
@@ -297,6 +344,65 @@ export async function getHarnessInfo(cwd: string): Promise<HarnessInfo | null> {
       result: h.result ?? "",
     }));
 
+  // Extract v4.4.2 loop timing fields
+  const timing: HarnessLoopTiming | null =
+    loopState?.startedAt || loopState?.lastAttemptAt || loopState?.lastCheckpoint || loopState?.escalationRequested !== undefined
+      ? {
+          startedAt: loopState.startedAt,
+          lastAttemptAt: loopState.lastAttemptAt,
+          lastCheckpoint: loopState.lastCheckpoint,
+          escalationRequested: loopState.escalationRequested,
+        }
+      : null;
+
+  // Extract v4.4.2 agent memory from agent-memory.json
+  const agentMemoryData = await readJsonFile<{
+    learnedPatterns?: Array<{ id?: string; pattern?: string; successRate?: number }>;
+    successfulApproaches?: Array<{ approach?: string; uses?: number }>;
+    failedApproaches?: Array<{ approach?: string; reason?: string }>;
+    agentPerformance?: {
+      totalTasks?: number;
+      successfulTasks?: number;
+      avgTaskDuration?: number;
+    };
+    codebaseInsights?: {
+      hotspots?: string[];
+      patterns?: string[];
+    };
+  }>(join(harnessDir, "agent-memory.json"));
+
+  const agentMemory: HarnessAgentMemory | null = agentMemoryData
+    ? {
+        learnedPatterns: agentMemoryData.learnedPatterns,
+        successfulApproaches: agentMemoryData.successfulApproaches,
+        failedApproaches: agentMemoryData.failedApproaches,
+        agentPerformance: agentMemoryData.agentPerformance,
+        codebaseInsights: agentMemoryData.codebaseInsights,
+      }
+    : null;
+
+  // Extract v4.4.2 root working context from working-context.json (root level)
+  const rootWorkingCtxData = await readJsonFile<{
+    summary?: string;
+    workingFiles?: Array<{ path?: string; role?: string }>;
+    decisions?: Array<{ id?: string; decision?: string; timestamp?: string }>;
+    codebaseUnderstanding?: {
+      architecture?: string;
+      keyDependencies?: string[];
+    };
+    nextSteps?: Array<{ step?: number; action?: string; priority?: string }>;
+  }>(join(harnessDir, "working-context.json"));
+
+  const rootWorkingContext: HarnessRootWorkingContext | null = rootWorkingCtxData
+    ? {
+        summary: rootWorkingCtxData.summary,
+        workingFiles: rootWorkingCtxData.workingFiles,
+        decisions: rootWorkingCtxData.decisions,
+        codebaseUnderstanding: rootWorkingCtxData.codebaseUnderstanding,
+        nextSteps: rootWorkingCtxData.nextSteps,
+      }
+    : null;
+
   return {
     version,
     memoryVersion: workingCtx?.version ?? 0,
@@ -326,6 +432,7 @@ export async function getHarnessInfo(cwd: string): Promise<HarnessInfo | null> {
       verification: loopState?.verification ?? {},
       tdd,
       history,
+      timing,
     },
     workingContext: {
       compiledAt: workingCtx?.computedAt ?? null,
@@ -337,5 +444,7 @@ export async function getHarnessInfo(cwd: string): Promise<HarnessInfo | null> {
       active: activeFeature,
       list: featureList,
     },
+    agentMemory,
+    rootWorkingContext,
   };
 }

@@ -764,5 +764,323 @@ describe("harness integration", () => {
         expect(result!.loop.verification).toEqual({});
       });
     });
+
+    describe("v4.4.2 loop timing fields", () => {
+      test("extracts startedAt from loop state", async () => {
+        await Bun.write(join(harnessDir, ".plugin-version"), "3.7.1");
+        await Bun.write(
+          join(harnessDir, "loops/state.json"),
+          JSON.stringify({
+            status: "in_progress",
+            startedAt: "2026-02-07T10:00:00Z",
+          })
+        );
+
+        const { getHarnessInfo } = await import("../integrations/harness");
+        const result = await getHarnessInfo(testDir);
+
+        expect(result!.loop.timing).toBeDefined();
+        expect(result!.loop.timing?.startedAt).toBe("2026-02-07T10:00:00Z");
+      });
+
+      test("extracts lastAttemptAt from loop state", async () => {
+        await Bun.write(join(harnessDir, ".plugin-version"), "3.7.1");
+        await Bun.write(
+          join(harnessDir, "loops/state.json"),
+          JSON.stringify({
+            status: "in_progress",
+            lastAttemptAt: "2026-02-07T11:30:00Z",
+          })
+        );
+
+        const { getHarnessInfo } = await import("../integrations/harness");
+        const result = await getHarnessInfo(testDir);
+
+        expect(result!.loop.timing?.lastAttemptAt).toBe("2026-02-07T11:30:00Z");
+      });
+
+      test("extracts lastCheckpoint from loop state", async () => {
+        await Bun.write(join(harnessDir, ".plugin-version"), "3.7.1");
+        await Bun.write(
+          join(harnessDir, "loops/state.json"),
+          JSON.stringify({
+            status: "in_progress",
+            lastCheckpoint: "2026-02-07T11:00:00Z",
+          })
+        );
+
+        const { getHarnessInfo } = await import("../integrations/harness");
+        const result = await getHarnessInfo(testDir);
+
+        expect(result!.loop.timing?.lastCheckpoint).toBe("2026-02-07T11:00:00Z");
+      });
+
+      test("extracts escalationRequested from loop state", async () => {
+        await Bun.write(join(harnessDir, ".plugin-version"), "3.7.1");
+        await Bun.write(
+          join(harnessDir, "loops/state.json"),
+          JSON.stringify({
+            status: "in_progress",
+            escalationRequested: true,
+          })
+        );
+
+        const { getHarnessInfo } = await import("../integrations/harness");
+        const result = await getHarnessInfo(testDir);
+
+        expect(result!.loop.timing?.escalationRequested).toBe(true);
+      });
+
+      test("handles missing timing fields gracefully", async () => {
+        await Bun.write(join(harnessDir, ".plugin-version"), "3.7.1");
+        await Bun.write(
+          join(harnessDir, "loops/state.json"),
+          JSON.stringify({
+            status: "idle",
+          })
+        );
+
+        const { getHarnessInfo } = await import("../integrations/harness");
+        const result = await getHarnessInfo(testDir);
+
+        expect(result!.loop.timing).toBeNull();
+      });
+
+      test("extracts all timing fields together", async () => {
+        await Bun.write(join(harnessDir, ".plugin-version"), "3.7.1");
+        await Bun.write(
+          join(harnessDir, "loops/state.json"),
+          JSON.stringify({
+            status: "in_progress",
+            startedAt: "2026-02-07T10:00:00Z",
+            lastAttemptAt: "2026-02-07T11:30:00Z",
+            lastCheckpoint: "2026-02-07T11:00:00Z",
+            escalationRequested: false,
+          })
+        );
+
+        const { getHarnessInfo } = await import("../integrations/harness");
+        const result = await getHarnessInfo(testDir);
+
+        expect(result!.loop.timing).toEqual({
+          startedAt: "2026-02-07T10:00:00Z",
+          lastAttemptAt: "2026-02-07T11:30:00Z",
+          lastCheckpoint: "2026-02-07T11:00:00Z",
+          escalationRequested: false,
+        });
+      });
+    });
+
+    describe("v4.4.2 agent memory fields", () => {
+      test("extracts learnedPatterns from agent-memory.json", async () => {
+        await Bun.write(join(harnessDir, ".plugin-version"), "3.7.1");
+        await Bun.write(
+          join(harnessDir, "agent-memory.json"),
+          JSON.stringify({
+            learnedPatterns: [
+              { id: "p1", pattern: "Use TDD approach", successRate: 0.9 },
+              { id: "p2", pattern: "Test edge cases", successRate: 0.85 },
+            ],
+          })
+        );
+
+        const { getHarnessInfo } = await import("../integrations/harness");
+        const result = await getHarnessInfo(testDir);
+
+        expect(result!.agentMemory).toBeDefined();
+        expect(result!.agentMemory?.learnedPatterns).toHaveLength(2);
+        expect(result!.agentMemory?.learnedPatterns?.[0].pattern).toBe("Use TDD approach");
+      });
+
+      test("extracts successfulApproaches from agent-memory.json", async () => {
+        await Bun.write(join(harnessDir, ".plugin-version"), "3.7.1");
+        await Bun.write(
+          join(harnessDir, "agent-memory.json"),
+          JSON.stringify({
+            successfulApproaches: [
+              { approach: "Direct implementation", uses: 5 },
+              { approach: "Refactoring first", uses: 3 },
+            ],
+          })
+        );
+
+        const { getHarnessInfo } = await import("../integrations/harness");
+        const result = await getHarnessInfo(testDir);
+
+        expect(result!.agentMemory?.successfulApproaches).toHaveLength(2);
+        expect(result!.agentMemory?.successfulApproaches?.[0].approach).toBe("Direct implementation");
+      });
+
+      test("extracts failedApproaches from agent-memory.json", async () => {
+        await Bun.write(join(harnessDir, ".plugin-version"), "3.7.1");
+        await Bun.write(
+          join(harnessDir, "agent-memory.json"),
+          JSON.stringify({
+            failedApproaches: [
+              { approach: "Quick fix", reason: "Incomplete" },
+              { approach: "Skip tests", reason: "Breaking changes" },
+            ],
+          })
+        );
+
+        const { getHarnessInfo } = await import("../integrations/harness");
+        const result = await getHarnessInfo(testDir);
+
+        expect(result!.agentMemory?.failedApproaches).toHaveLength(2);
+        expect(result!.agentMemory?.failedApproaches?.[0].approach).toBe("Quick fix");
+      });
+
+      test("extracts agentPerformance from agent-memory.json", async () => {
+        await Bun.write(join(harnessDir, ".plugin-version"), "3.7.1");
+        await Bun.write(
+          join(harnessDir, "agent-memory.json"),
+          JSON.stringify({
+            agentPerformance: {
+              totalTasks: 50,
+              successfulTasks: 45,
+              avgTaskDuration: 300,
+            },
+          })
+        );
+
+        const { getHarnessInfo } = await import("../integrations/harness");
+        const result = await getHarnessInfo(testDir);
+
+        expect(result!.agentMemory?.agentPerformance).toBeDefined();
+        expect(result!.agentMemory?.agentPerformance?.totalTasks).toBe(50);
+        expect(result!.agentMemory?.agentPerformance?.successfulTasks).toBe(45);
+      });
+
+      test("extracts codebaseInsights from agent-memory.json", async () => {
+        await Bun.write(join(harnessDir, ".plugin-version"), "3.7.1");
+        await Bun.write(
+          join(harnessDir, "agent-memory.json"),
+          JSON.stringify({
+            codebaseInsights: {
+              hotspots: ["src/auth.ts", "src/database.ts"],
+              patterns: ["Heavy use of async/await", "Frequent file I/O"],
+            },
+          })
+        );
+
+        const { getHarnessInfo } = await import("../integrations/harness");
+        const result = await getHarnessInfo(testDir);
+
+        expect(result!.agentMemory?.codebaseInsights).toBeDefined();
+        expect(result!.agentMemory?.codebaseInsights?.hotspots).toEqual(["src/auth.ts", "src/database.ts"]);
+      });
+
+      test("handles missing agent-memory.json gracefully", async () => {
+        await Bun.write(join(harnessDir, ".plugin-version"), "3.7.1");
+
+        const { getHarnessInfo } = await import("../integrations/harness");
+        const result = await getHarnessInfo(testDir);
+
+        expect(result!.agentMemory).toBeNull();
+      });
+    });
+
+    describe("v4.4.2 root working context fields", () => {
+      test("extracts summary from root working-context.json", async () => {
+        await Bun.write(join(harnessDir, ".plugin-version"), "3.7.1");
+        await Bun.write(
+          join(harnessDir, "working-context.json"),
+          JSON.stringify({
+            summary: "Currently implementing authentication feature",
+          })
+        );
+
+        const { getHarnessInfo } = await import("../integrations/harness");
+        const result = await getHarnessInfo(testDir);
+
+        expect(result!.rootWorkingContext).toBeDefined();
+        expect(result!.rootWorkingContext?.summary).toBe("Currently implementing authentication feature");
+      });
+
+      test("extracts workingFiles from root working-context.json", async () => {
+        await Bun.write(join(harnessDir, ".plugin-version"), "3.7.1");
+        await Bun.write(
+          join(harnessDir, "working-context.json"),
+          JSON.stringify({
+            workingFiles: [
+              { path: "src/auth.ts", role: "implementation" },
+              { path: "tests/auth.test.ts", role: "tests" },
+            ],
+          })
+        );
+
+        const { getHarnessInfo } = await import("../integrations/harness");
+        const result = await getHarnessInfo(testDir);
+
+        expect(result!.rootWorkingContext?.workingFiles).toHaveLength(2);
+        expect(result!.rootWorkingContext?.workingFiles?.[0].path).toBe("src/auth.ts");
+      });
+
+      test("extracts decisions from root working-context.json", async () => {
+        await Bun.write(join(harnessDir, ".plugin-version"), "3.7.1");
+        await Bun.write(
+          join(harnessDir, "working-context.json"),
+          JSON.stringify({
+            decisions: [
+              { id: "d1", decision: "Use JWT for authentication", timestamp: "2026-02-07T10:00:00Z" },
+              { id: "d2", decision: "Implement rate limiting", timestamp: "2026-02-07T10:30:00Z" },
+            ],
+          })
+        );
+
+        const { getHarnessInfo } = await import("../integrations/harness");
+        const result = await getHarnessInfo(testDir);
+
+        expect(result!.rootWorkingContext?.decisions).toHaveLength(2);
+        expect(result!.rootWorkingContext?.decisions?.[0].decision).toBe("Use JWT for authentication");
+      });
+
+      test("extracts codebaseUnderstanding from root working-context.json", async () => {
+        await Bun.write(join(harnessDir, ".plugin-version"), "3.7.1");
+        await Bun.write(
+          join(harnessDir, "working-context.json"),
+          JSON.stringify({
+            codebaseUnderstanding: {
+              architecture: "MVC pattern with services layer",
+              keyDependencies: ["express", "typescript", "prisma"],
+            },
+          })
+        );
+
+        const { getHarnessInfo } = await import("../integrations/harness");
+        const result = await getHarnessInfo(testDir);
+
+        expect(result!.rootWorkingContext?.codebaseUnderstanding).toBeDefined();
+        expect(result!.rootWorkingContext?.codebaseUnderstanding?.architecture).toBe("MVC pattern with services layer");
+      });
+
+      test("extracts nextSteps from root working-context.json", async () => {
+        await Bun.write(join(harnessDir, ".plugin-version"), "3.7.1");
+        await Bun.write(
+          join(harnessDir, "working-context.json"),
+          JSON.stringify({
+            nextSteps: [
+              { step: 1, action: "Write tests for login", priority: "high" },
+              { step: 2, action: "Implement session management", priority: "medium" },
+            ],
+          })
+        );
+
+        const { getHarnessInfo } = await import("../integrations/harness");
+        const result = await getHarnessInfo(testDir);
+
+        expect(result!.rootWorkingContext?.nextSteps).toHaveLength(2);
+        expect(result!.rootWorkingContext?.nextSteps?.[0].action).toBe("Write tests for login");
+      });
+
+      test("handles missing root working-context.json gracefully", async () => {
+        await Bun.write(join(harnessDir, ".plugin-version"), "3.7.1");
+
+        const { getHarnessInfo } = await import("../integrations/harness");
+        const result = await getHarnessInfo(testDir);
+
+        expect(result!.rootWorkingContext).toBeNull();
+      });
+    });
   });
 });
