@@ -34,10 +34,12 @@ yarn-error.log*
 
 .specstory/
 
-# claude-harness runtime state (track only feature-list.json and feature-archive.json)
-.claude-harness/*
-!.claude-harness/feature-list.json
-!.claude-harness/feature-archive.json
+# Claude Harness - Ephemeral/Per-Session State
+.claude-harness/sessions/
+.claude-harness/memory/compaction-backups/
+
+# Claude Code - Local settings
+.claude/settings.local.json
 
 # bv (beads viewer) local config and caches
 .bv/
