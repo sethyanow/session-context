@@ -101,3 +101,24 @@ git push                # Push to remote
 - Always `bd sync` before ending session
 
 <!-- end-bv-agent-instructions -->
+
+
+<!-- brain:start -->
+## Brain Context
+*Updated: 2026-02-07 11:39*
+
+### Active Now
+*No other agents active*
+
+### Recent Decisions
+*No recent decisions*
+
+### Patterns
+- **Memory**: 0 patterns, 0 decisions
+- **The active features registry w**: feature-001 (v3.0 test coverage) was marked as passing and l
+- **A P2 feature issue (session-co**: loop timing metadata (startedAt, lastAttemptAt, lastCheckpoi
+
+### Relevant
+> Patterns: [.brain/procedural/patterns.md]
+
+<!-- brain:end -->
