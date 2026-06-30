@@ -181,17 +181,21 @@ function hasDefinedValues<T extends object>(obj: T | null): obj is T {
 }
 
 // Normalize enum-like strings read from JSON so invalid values cannot leak into
-// the typed unions and break downstream exhaustive logic.
-function normalizeLoopStatus(value?: string): HarnessLoopStatus {
-  return value === "idle" ||
-    value === "in_progress" ||
-    value === "complete" ||
-    value === "escalated"
-    ? value
-    : "idle";
+// the typed unions and break downstream exhaustive logic. JSON may contain null
+// at runtime (readJsonFile is an unchecked cast), so every normalizer accepts it.
+function normalizeLoopStatus(value?: string | null): HarnessLoopStatus {
+  switch (value) {
+    case "idle":
+    case "in_progress":
+    case "complete":
+    case "escalated":
+      return value;
+    default:
+      return "idle";
+  }
 }
 
-function normalizeLoopType(value?: string): HarnessLoopType {
+function normalizeLoopType(value?: string | null): HarnessLoopType {
   return value === "feature" || value === "fix" ? value : "feature";
 }
 

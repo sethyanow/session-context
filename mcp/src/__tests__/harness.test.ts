@@ -280,6 +280,30 @@ describe("harness integration", () => {
         expect(result!.loop.status).toBe("idle");
       });
 
+      test("normalizes a null loop status to 'idle'", async () => {
+        await Bun.write(join(harnessDir, ".plugin-version"), "3.7.1");
+        // JSON can carry null even though the TS type says string (unchecked cast)
+        await Bun.write(join(harnessDir, "loops/state.json"), JSON.stringify({ status: null }));
+
+        const { getHarnessInfo } = await import("../integrations/harness");
+        const result = await getHarnessInfo(testDir);
+
+        expect(result!.loop.status).toBe("idle");
+      });
+
+      test("normalizes a null loop type to 'feature'", async () => {
+        await Bun.write(join(harnessDir, ".plugin-version"), "3.7.1");
+        await Bun.write(
+          join(harnessDir, "loops/state.json"),
+          JSON.stringify({ status: "in_progress", type: null })
+        );
+
+        const { getHarnessInfo } = await import("../integrations/harness");
+        const result = await getHarnessInfo(testDir);
+
+        expect(result!.loop.type).toBe("feature");
+      });
+
       test("normalizes an unknown loop type to 'feature'", async () => {
         await Bun.write(join(harnessDir, ".plugin-version"), "3.7.1");
         await Bun.write(
