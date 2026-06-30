@@ -352,9 +352,13 @@ export async function getHarnessInfo(cwd: string): Promise<HarnessInfo | null> {
       result: h.result ?? "",
     }));
 
-  // Extract v4.4.2 loop timing fields
+  // Extract v4.4.2 loop timing fields. Use explicit `!== undefined` checks so a
+  // present-but-falsy value (e.g. an empty-string timestamp) still surfaces timing.
   const timing: HarnessLoopTiming | null =
-    loopState?.startedAt || loopState?.lastAttemptAt || loopState?.lastCheckpoint || loopState?.escalationRequested !== undefined
+    loopState?.startedAt !== undefined ||
+    loopState?.lastAttemptAt !== undefined ||
+    loopState?.lastCheckpoint !== undefined ||
+    loopState?.escalationRequested !== undefined
       ? {
           startedAt: loopState.startedAt,
           lastAttemptAt: loopState.lastAttemptAt,

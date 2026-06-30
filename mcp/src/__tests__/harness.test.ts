@@ -866,6 +866,24 @@ describe("harness integration", () => {
         expect(result!.loop.timing).toBeNull();
       });
 
+      test("treats an empty-string timestamp as present timing data", async () => {
+        await Bun.write(join(harnessDir, ".plugin-version"), "3.7.1");
+        await Bun.write(
+          join(harnessDir, "loops/state.json"),
+          JSON.stringify({
+            status: "in_progress",
+            lastCheckpoint: "",
+          })
+        );
+
+        const { getHarnessInfo } = await import("../integrations/harness");
+        const result = await getHarnessInfo(testDir);
+
+        // The field is present (even if empty), so timing must be surfaced, not dropped
+        expect(result!.loop.timing).not.toBeNull();
+        expect(result!.loop.timing?.lastCheckpoint).toBe("");
+      });
+
       test("extracts all timing fields together", async () => {
         await Bun.write(join(harnessDir, ".plugin-version"), "3.7.1");
         await Bun.write(
