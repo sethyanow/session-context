@@ -1114,6 +1114,18 @@ describe("harness integration", () => {
         // An empty object carries no content - downstream `!== null` checks must not be misled
         expect(result!.agentMemory).toBeNull();
       });
+
+      test("returns null when agent-memory.json is a non-object JSON value", async () => {
+        await Bun.write(join(harnessDir, ".plugin-version"), "3.7.1");
+        // A bare JSON string is valid JSON but not an object; it must not be
+        // treated as content (Object.values would otherwise iterate characters)
+        await Bun.write(join(harnessDir, "agent-memory.json"), JSON.stringify("unexpected"));
+
+        const { getHarnessInfo } = await import("../integrations/harness");
+        const result = await getHarnessInfo(testDir);
+
+        expect(result!.agentMemory).toBeNull();
+      });
     });
 
     describe("v4.4.2 root working context fields", () => {

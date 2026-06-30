@@ -169,9 +169,15 @@ async function readJsonFile<T>(path: string): Promise<T | null> {
 
 // An object parsed from JSON is only meaningful if it has at least one defined
 // value. Empty `{}` files must map to null so downstream `!== null` checks are
-// not misled into thinking content exists.
+// not misled into thinking content exists. `readJsonFile` is an unchecked cast,
+// so guard against non-object JSON (strings, arrays, numbers) at runtime too.
 function hasDefinedValues<T extends object>(obj: T | null): obj is T {
-  return obj !== null && Object.values(obj).some((v) => v !== undefined);
+  return (
+    typeof obj === "object" &&
+    obj !== null &&
+    !Array.isArray(obj) &&
+    Object.values(obj).some((v) => v !== undefined)
+  );
 }
 
 // Normalize enum-like strings read from JSON so invalid values cannot leak into
