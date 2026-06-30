@@ -998,6 +998,17 @@ describe("harness integration", () => {
 
         expect(result!.agentMemory).toBeNull();
       });
+
+      test("returns null for an empty agent-memory.json object", async () => {
+        await Bun.write(join(harnessDir, ".plugin-version"), "3.7.1");
+        await Bun.write(join(harnessDir, "agent-memory.json"), JSON.stringify({}));
+
+        const { getHarnessInfo } = await import("../integrations/harness");
+        const result = await getHarnessInfo(testDir);
+
+        // An empty object carries no content - downstream `!== null` checks must not be misled
+        expect(result!.agentMemory).toBeNull();
+      });
     });
 
     describe("v4.4.2 root working context fields", () => {
@@ -1099,6 +1110,17 @@ describe("harness integration", () => {
         const { getHarnessInfo } = await import("../integrations/harness");
         const result = await getHarnessInfo(testDir);
 
+        expect(result!.rootWorkingContext).toBeNull();
+      });
+
+      test("returns null for an empty root working-context.json object", async () => {
+        await Bun.write(join(harnessDir, ".plugin-version"), "3.7.1");
+        await Bun.write(join(harnessDir, "working-context.json"), JSON.stringify({}));
+
+        const { getHarnessInfo } = await import("../integrations/harness");
+        const result = await getHarnessInfo(testDir);
+
+        // An empty object carries no content - downstream `!== null` checks must not be misled
         expect(result!.rootWorkingContext).toBeNull();
       });
     });

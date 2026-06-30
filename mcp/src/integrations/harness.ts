@@ -167,6 +167,13 @@ async function readJsonFile<T>(path: string): Promise<T | null> {
   }
 }
 
+// An object parsed from JSON is only meaningful if it has at least one defined
+// value. Empty `{}` files must map to null so downstream `!== null` checks are
+// not misled into thinking content exists.
+function hasDefinedValues(obj: Record<string, unknown> | null): boolean {
+  return obj !== null && Object.values(obj).some((v) => v !== undefined);
+}
+
 // Check if harness is available using Bun APIs
 export async function isHarnessAvailable(cwd: string): Promise<boolean> {
   try {
@@ -372,7 +379,7 @@ export async function getHarnessInfo(cwd: string): Promise<HarnessInfo | null> {
     };
   }>(join(harnessDir, "agent-memory.json"));
 
-  const agentMemory: HarnessAgentMemory | null = agentMemoryData
+  const agentMemory: HarnessAgentMemory | null = hasDefinedValues(agentMemoryData)
     ? {
         learnedPatterns: agentMemoryData.learnedPatterns,
         successfulApproaches: agentMemoryData.successfulApproaches,
@@ -394,7 +401,7 @@ export async function getHarnessInfo(cwd: string): Promise<HarnessInfo | null> {
     nextSteps?: Array<{ step?: number; action?: string; priority?: string }>;
   }>(join(harnessDir, "working-context.json"));
 
-  const rootWorkingContext: HarnessRootWorkingContext | null = rootWorkingCtxData
+  const rootWorkingContext: HarnessRootWorkingContext | null = hasDefinedValues(rootWorkingCtxData)
     ? {
         summary: rootWorkingCtxData.summary,
         workingFiles: rootWorkingCtxData.workingFiles,
