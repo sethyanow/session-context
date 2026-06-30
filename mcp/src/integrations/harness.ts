@@ -343,7 +343,9 @@ export async function getHarnessInfo(cwd: string): Promise<HarnessInfo | null> {
     priority: f.priority ?? 0,
   }));
 
-  // Determine active feature from loop state or active.json
+  // Determine active feature from loop state or active.json.
+  // A null/absent loop feature means "loop is not pinned to a feature", so we
+  // intentionally fall back to the registry's active.json (covered by tests).
   const activeFeatureId = loopState?.feature ?? activeFeatureData?.id;
   const activeFeature = activeFeatureId
     ? activeFeatureData?.id === activeFeatureId

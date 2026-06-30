@@ -789,6 +789,32 @@ describe("harness integration", () => {
         expect(result!.features.active!.name).toBe("Feature 2");
       });
 
+      test("falls back to features/active.json when loop feature is null", async () => {
+        // Documents intended behavior (PR #2 note): a null/absent loop feature
+        // is "loop not pinned to a feature", so we fall back to the registry's
+        // active.json rather than reporting no active feature.
+        await Bun.write(join(harnessDir, ".plugin-version"), "3.7.1");
+        await Bun.write(
+          join(harnessDir, "features/active.json"),
+          JSON.stringify({
+            id: "feature-001",
+            name: "Add authentication",
+            passes: false,
+            priority: 1,
+          })
+        );
+        await Bun.write(
+          join(harnessDir, "loops/state.json"),
+          JSON.stringify({ feature: null, status: "idle" })
+        );
+
+        const { getHarnessInfo } = await import("../integrations/harness");
+        const result = await getHarnessInfo(testDir);
+
+        expect(result!.features.active).not.toBeNull();
+        expect(result!.features.active!.id).toBe("feature-001");
+      });
+
       test("handles no active feature", async () => {
         await Bun.write(join(harnessDir, ".plugin-version"), "3.7.1");
         await Bun.write(
