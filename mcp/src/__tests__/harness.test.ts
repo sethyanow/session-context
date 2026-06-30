@@ -266,6 +266,66 @@ describe("harness integration", () => {
       });
     });
 
+    describe("enum-like value normalization", () => {
+      test("normalizes an unknown loop status to 'idle'", async () => {
+        await Bun.write(join(harnessDir, ".plugin-version"), "3.7.1");
+        await Bun.write(
+          join(harnessDir, "loops/state.json"),
+          JSON.stringify({ status: "bogus" })
+        );
+
+        const { getHarnessInfo } = await import("../integrations/harness");
+        const result = await getHarnessInfo(testDir);
+
+        expect(result!.loop.status).toBe("idle");
+      });
+
+      test("normalizes an unknown loop type to 'feature'", async () => {
+        await Bun.write(join(harnessDir, ".plugin-version"), "3.7.1");
+        await Bun.write(
+          join(harnessDir, "loops/state.json"),
+          JSON.stringify({ status: "in_progress", type: "bogus" })
+        );
+
+        const { getHarnessInfo } = await import("../integrations/harness");
+        const result = await getHarnessInfo(testDir);
+
+        expect(result!.loop.type).toBe("feature");
+      });
+
+      test("normalizes an unknown TDD phase to null", async () => {
+        await Bun.write(join(harnessDir, ".plugin-version"), "3.7.1");
+        await Bun.write(
+          join(harnessDir, "loops/state.json"),
+          JSON.stringify({
+            status: "in_progress",
+            tdd: { enabled: true, phase: "bogus", testStatus: "passing" },
+          })
+        );
+
+        const { getHarnessInfo } = await import("../integrations/harness");
+        const result = await getHarnessInfo(testDir);
+
+        expect(result!.loop.tdd!.phase).toBeNull();
+      });
+
+      test("normalizes an unknown TDD test status to null", async () => {
+        await Bun.write(join(harnessDir, ".plugin-version"), "3.7.1");
+        await Bun.write(
+          join(harnessDir, "loops/state.json"),
+          JSON.stringify({
+            status: "in_progress",
+            tdd: { enabled: true, phase: "green", testStatus: "bogus" },
+          })
+        );
+
+        const { getHarnessInfo } = await import("../integrations/harness");
+        const result = await getHarnessInfo(testDir);
+
+        expect(result!.loop.tdd!.testStatus).toBeNull();
+      });
+    });
+
     describe("TDD state extraction", () => {
       test("extracts TDD state when present", async () => {
         await Bun.write(join(harnessDir, ".plugin-version"), "3.7.1");

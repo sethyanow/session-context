@@ -170,8 +170,31 @@ async function readJsonFile<T>(path: string): Promise<T | null> {
 // An object parsed from JSON is only meaningful if it has at least one defined
 // value. Empty `{}` files must map to null so downstream `!== null` checks are
 // not misled into thinking content exists.
-function hasDefinedValues(obj: Record<string, unknown> | null): boolean {
+function hasDefinedValues<T extends object>(obj: T | null): obj is T {
   return obj !== null && Object.values(obj).some((v) => v !== undefined);
+}
+
+// Normalize enum-like strings read from JSON so invalid values cannot leak into
+// the typed unions and break downstream exhaustive logic.
+function normalizeLoopStatus(value?: string): HarnessLoopStatus {
+  return value === "idle" ||
+    value === "in_progress" ||
+    value === "complete" ||
+    value === "escalated"
+    ? value
+    : "idle";
+}
+
+function normalizeLoopType(value?: string): HarnessLoopType {
+  return value === "feature" || value === "fix" ? value : "feature";
+}
+
+function normalizeTddPhase(value?: string | null): HarnessTDDPhase | null {
+  return value === "red" || value === "green" || value === "refactor" ? value : null;
+}
+
+function normalizeTddTestStatus(value?: string | null): HarnessTDDTestStatus | null {
+  return value === "failing" || value === "passing" ? value : null;
 }
 
 // Check if harness is available using Bun APIs
@@ -337,9 +360,9 @@ export async function getHarnessInfo(cwd: string): Promise<HarnessInfo | null> {
   const tdd: HarnessTDD | null = loopState?.tdd
     ? {
         enabled: loopState.tdd.enabled ?? false,
-        phase: (loopState.tdd.phase as HarnessTDDPhase) ?? null,
+        phase: normalizeTddPhase(loopState.tdd.phase),
         testsWritten: loopState.tdd.testsWritten ?? [],
-        testStatus: (loopState.tdd.testStatus as HarnessTDDTestStatus) ?? null,
+        testStatus: normalizeTddTestStatus(loopState.tdd.testStatus),
       }
     : null;
 
@@ -429,10 +452,10 @@ export async function getHarnessInfo(cwd: string): Promise<HarnessInfo | null> {
       learnedRules,
     },
     loop: {
-      status: (loopState?.status as HarnessLoopStatus) ?? "idle",
+      status: normalizeLoopStatus(loopState?.status),
       feature: loopState?.feature ?? null,
       featureName: loopState?.featureName ?? null,
-      type: (loopState?.type as HarnessLoopType) ?? "feature",
+      type: normalizeLoopType(loopState?.type),
       linkedTo: loopState?.linkedTo
         ? {
             featureId: loopState.linkedTo.featureId ?? null,
