@@ -146,6 +146,26 @@ describe("harness integration", () => {
         expect(result!.memory.rules).toBe(2);
       });
 
+      test("counts legacy rules without an active flag as active", async () => {
+        await Bun.write(join(harnessDir, ".plugin-version"), "3.7.1");
+        await Bun.write(
+          join(harnessDir, "memory/learned/rules.json"),
+          JSON.stringify({
+            rules: [
+              { id: "r1", title: "Legacy rule with no active flag" },
+              { id: "r2", active: false, title: "Explicitly inactive" },
+              { id: "r3", active: true, title: "Active" },
+            ],
+          })
+        );
+
+        const { getHarnessInfo } = await import("../integrations/harness");
+        const result = await getHarnessInfo(testDir);
+
+        // Backward compat: a missing `active` flag means active (only `active: false` excludes)
+        expect(result!.memory.rules).toBe(2);
+      });
+
       test("handles missing memory files gracefully", async () => {
         await Bun.write(join(harnessDir, ".plugin-version"), "3.7.1");
 

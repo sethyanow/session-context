@@ -235,7 +235,8 @@ export async function getHarnessInfo(cwd: string): Promise<HarnessInfo | null> {
   const rulesData = await readJsonFile<{
     rules?: { id?: string; title?: string; description?: string; scope?: string; active?: boolean }[];
   }>(join(harnessDir, "memory/learned/rules.json"));
-  const activeRules = rulesData?.rules?.filter((r) => r.active) ?? [];
+  // Treat a missing `active` flag as active for backward compat (only `active: false` excludes)
+  const activeRules = rulesData?.rules?.filter((r) => r.active !== false) ?? [];
   const rules = activeRules.length;
 
   // Get loop state - try v3.0 path first, fallback to legacy
