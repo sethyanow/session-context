@@ -146,6 +146,26 @@ describe("harness integration", () => {
         expect(result!.memory.rules).toBe(2);
       });
 
+      test("counts legacy rules without an active flag as active", async () => {
+        await Bun.write(join(harnessDir, ".plugin-version"), "3.7.1");
+        await Bun.write(
+          join(harnessDir, "memory/learned/rules.json"),
+          JSON.stringify({
+            rules: [
+              { id: "r1", title: "Legacy rule with no active flag" },
+              { id: "r2", active: false, title: "Explicitly inactive" },
+              { id: "r3", active: true, title: "Active" },
+            ],
+          })
+        );
+
+        const { getHarnessInfo } = await import("../integrations/harness");
+        const result = await getHarnessInfo(testDir);
+
+        // Backward compat: a missing `active` flag means active (only `active: false` excludes)
+        expect(result!.memory.rules).toBe(2);
+      });
+
       test("handles missing memory files gracefully", async () => {
         await Bun.write(join(harnessDir, ".plugin-version"), "3.7.1");
 
@@ -243,6 +263,90 @@ describe("harness integration", () => {
         const result = await getHarnessInfo(testDir);
 
         expect(result!.loop.type).toBe("feature");
+      });
+    });
+
+    describe("enum-like value normalization", () => {
+      test("normalizes an unknown loop status to 'idle'", async () => {
+        await Bun.write(join(harnessDir, ".plugin-version"), "3.7.1");
+        await Bun.write(
+          join(harnessDir, "loops/state.json"),
+          JSON.stringify({ status: "bogus" })
+        );
+
+        const { getHarnessInfo } = await import("../integrations/harness");
+        const result = await getHarnessInfo(testDir);
+
+        expect(result!.loop.status).toBe("idle");
+      });
+
+      test("normalizes a null loop status to 'idle'", async () => {
+        await Bun.write(join(harnessDir, ".plugin-version"), "3.7.1");
+        // JSON can carry null even though the TS type says string (unchecked cast)
+        await Bun.write(join(harnessDir, "loops/state.json"), JSON.stringify({ status: null }));
+
+        const { getHarnessInfo } = await import("../integrations/harness");
+        const result = await getHarnessInfo(testDir);
+
+        expect(result!.loop.status).toBe("idle");
+      });
+
+      test("normalizes a null loop type to 'feature'", async () => {
+        await Bun.write(join(harnessDir, ".plugin-version"), "3.7.1");
+        await Bun.write(
+          join(harnessDir, "loops/state.json"),
+          JSON.stringify({ status: "in_progress", type: null })
+        );
+
+        const { getHarnessInfo } = await import("../integrations/harness");
+        const result = await getHarnessInfo(testDir);
+
+        expect(result!.loop.type).toBe("feature");
+      });
+
+      test("normalizes an unknown loop type to 'feature'", async () => {
+        await Bun.write(join(harnessDir, ".plugin-version"), "3.7.1");
+        await Bun.write(
+          join(harnessDir, "loops/state.json"),
+          JSON.stringify({ status: "in_progress", type: "bogus" })
+        );
+
+        const { getHarnessInfo } = await import("../integrations/harness");
+        const result = await getHarnessInfo(testDir);
+
+        expect(result!.loop.type).toBe("feature");
+      });
+
+      test("normalizes an unknown TDD phase to null", async () => {
+        await Bun.write(join(harnessDir, ".plugin-version"), "3.7.1");
+        await Bun.write(
+          join(harnessDir, "loops/state.json"),
+          JSON.stringify({
+            status: "in_progress",
+            tdd: { enabled: true, phase: "bogus", testStatus: "passing" },
+          })
+        );
+
+        const { getHarnessInfo } = await import("../integrations/harness");
+        const result = await getHarnessInfo(testDir);
+
+        expect(result!.loop.tdd!.phase).toBeNull();
+      });
+
+      test("normalizes an unknown TDD test status to null", async () => {
+        await Bun.write(join(harnessDir, ".plugin-version"), "3.7.1");
+        await Bun.write(
+          join(harnessDir, "loops/state.json"),
+          JSON.stringify({
+            status: "in_progress",
+            tdd: { enabled: true, phase: "green", testStatus: "bogus" },
+          })
+        );
+
+        const { getHarnessInfo } = await import("../integrations/harness");
+        const result = await getHarnessInfo(testDir);
+
+        expect(result!.loop.tdd!.testStatus).toBeNull();
       });
     });
 
@@ -599,6 +703,7 @@ describe("harness integration", () => {
         expect(result!.memory.recentDecisions).toEqual([]);
         expect(result!.memory.projectPatterns).toEqual([]);
         expect(result!.memory.avoidApproaches).toEqual([]);
+        expect(result!.memory.learnedRules).toEqual([]);
       });
     });
 
@@ -707,6 +812,32 @@ describe("harness integration", () => {
         expect(result!.features.active).not.toBeNull();
         expect(result!.features.active!.id).toBe("f2");
         expect(result!.features.active!.name).toBe("Feature 2");
+      });
+
+      test("falls back to features/active.json when loop feature is null", async () => {
+        // Documents intended behavior (PR #2 note): a null/absent loop feature
+        // is "loop not pinned to a feature", so we fall back to the registry's
+        // active.json rather than reporting no active feature.
+        await Bun.write(join(harnessDir, ".plugin-version"), "3.7.1");
+        await Bun.write(
+          join(harnessDir, "features/active.json"),
+          JSON.stringify({
+            id: "feature-001",
+            name: "Add authentication",
+            passes: false,
+            priority: 1,
+          })
+        );
+        await Bun.write(
+          join(harnessDir, "loops/state.json"),
+          JSON.stringify({ feature: null, status: "idle" })
+        );
+
+        const { getHarnessInfo } = await import("../integrations/harness");
+        const result = await getHarnessInfo(testDir);
+
+        expect(result!.features.active).not.toBeNull();
+        expect(result!.features.active!.id).toBe("feature-001");
       });
 
       test("handles no active feature", async () => {
@@ -846,6 +977,24 @@ describe("harness integration", () => {
         expect(result!.loop.timing).toBeNull();
       });
 
+      test("treats an empty-string timestamp as present timing data", async () => {
+        await Bun.write(join(harnessDir, ".plugin-version"), "3.7.1");
+        await Bun.write(
+          join(harnessDir, "loops/state.json"),
+          JSON.stringify({
+            status: "in_progress",
+            lastCheckpoint: "",
+          })
+        );
+
+        const { getHarnessInfo } = await import("../integrations/harness");
+        const result = await getHarnessInfo(testDir);
+
+        // The field is present (even if empty), so timing must be surfaced, not dropped
+        expect(result!.loop.timing).not.toBeNull();
+        expect(result!.loop.timing?.lastCheckpoint).toBe("");
+      });
+
       test("extracts all timing fields together", async () => {
         await Bun.write(join(harnessDir, ".plugin-version"), "3.7.1");
         await Bun.write(
@@ -978,6 +1127,29 @@ describe("harness integration", () => {
 
         expect(result!.agentMemory).toBeNull();
       });
+
+      test("returns null for an empty agent-memory.json object", async () => {
+        await Bun.write(join(harnessDir, ".plugin-version"), "3.7.1");
+        await Bun.write(join(harnessDir, "agent-memory.json"), JSON.stringify({}));
+
+        const { getHarnessInfo } = await import("../integrations/harness");
+        const result = await getHarnessInfo(testDir);
+
+        // An empty object carries no content - downstream `!== null` checks must not be misled
+        expect(result!.agentMemory).toBeNull();
+      });
+
+      test("returns null when agent-memory.json is a non-object JSON value", async () => {
+        await Bun.write(join(harnessDir, ".plugin-version"), "3.7.1");
+        // A bare JSON string is valid JSON but not an object; it must not be
+        // treated as content (Object.values would otherwise iterate characters)
+        await Bun.write(join(harnessDir, "agent-memory.json"), JSON.stringify("unexpected"));
+
+        const { getHarnessInfo } = await import("../integrations/harness");
+        const result = await getHarnessInfo(testDir);
+
+        expect(result!.agentMemory).toBeNull();
+      });
     });
 
     describe("v4.4.2 root working context fields", () => {
@@ -1079,6 +1251,17 @@ describe("harness integration", () => {
         const { getHarnessInfo } = await import("../integrations/harness");
         const result = await getHarnessInfo(testDir);
 
+        expect(result!.rootWorkingContext).toBeNull();
+      });
+
+      test("returns null for an empty root working-context.json object", async () => {
+        await Bun.write(join(harnessDir, ".plugin-version"), "3.7.1");
+        await Bun.write(join(harnessDir, "working-context.json"), JSON.stringify({}));
+
+        const { getHarnessInfo } = await import("../integrations/harness");
+        const result = await getHarnessInfo(testDir);
+
+        // An empty object carries no content - downstream `!== null` checks must not be misled
         expect(result!.rootWorkingContext).toBeNull();
       });
     });

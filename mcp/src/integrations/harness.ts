@@ -167,6 +167,46 @@ async function readJsonFile<T>(path: string): Promise<T | null> {
   }
 }
 
+// An object parsed from JSON is only meaningful if it has at least one defined
+// value. Empty `{}` files must map to null so downstream `!== null` checks are
+// not misled into thinking content exists. `readJsonFile` is an unchecked cast,
+// so guard against non-object JSON (strings, arrays, numbers) at runtime too.
+function hasDefinedValues<T extends object>(obj: T | null): obj is T {
+  return (
+    typeof obj === "object" &&
+    obj !== null &&
+    !Array.isArray(obj) &&
+    Object.values(obj).some((v) => v !== undefined)
+  );
+}
+
+// Normalize enum-like strings read from JSON so invalid values cannot leak into
+// the typed unions and break downstream exhaustive logic. JSON may contain null
+// at runtime (readJsonFile is an unchecked cast), so every normalizer accepts it.
+function normalizeLoopStatus(value?: string | null): HarnessLoopStatus {
+  switch (value) {
+    case "idle":
+    case "in_progress":
+    case "complete":
+    case "escalated":
+      return value;
+    default:
+      return "idle";
+  }
+}
+
+function normalizeLoopType(value?: string | null): HarnessLoopType {
+  return value === "feature" || value === "fix" ? value : "feature";
+}
+
+function normalizeTddPhase(value?: string | null): HarnessTDDPhase | null {
+  return value === "red" || value === "green" || value === "refactor" ? value : null;
+}
+
+function normalizeTddTestStatus(value?: string | null): HarnessTDDTestStatus | null {
+  return value === "failing" || value === "passing" ? value : null;
+}
+
 // Check if harness is available using Bun APIs
 export async function isHarnessAvailable(cwd: string): Promise<boolean> {
   try {
@@ -235,7 +275,8 @@ export async function getHarnessInfo(cwd: string): Promise<HarnessInfo | null> {
   const rulesData = await readJsonFile<{
     rules?: { id?: string; title?: string; description?: string; scope?: string; active?: boolean }[];
   }>(join(harnessDir, "memory/learned/rules.json"));
-  const activeRules = rulesData?.rules?.filter((r) => r.active) ?? [];
+  // Treat a missing `active` flag as active for backward compat (only `active: false` excludes)
+  const activeRules = rulesData?.rules?.filter((r) => r.active !== false) ?? [];
   const rules = activeRules.length;
 
   // Get loop state - try v3.0 path first, fallback to legacy
@@ -312,7 +353,9 @@ export async function getHarnessInfo(cwd: string): Promise<HarnessInfo | null> {
     priority: f.priority ?? 0,
   }));
 
-  // Determine active feature from loop state or active.json
+  // Determine active feature from loop state or active.json.
+  // A null/absent loop feature means "loop is not pinned to a feature", so we
+  // intentionally fall back to the registry's active.json (covered by tests).
   const activeFeatureId = loopState?.feature ?? activeFeatureData?.id;
   const activeFeature = activeFeatureId
     ? activeFeatureData?.id === activeFeatureId
@@ -329,9 +372,9 @@ export async function getHarnessInfo(cwd: string): Promise<HarnessInfo | null> {
   const tdd: HarnessTDD | null = loopState?.tdd
     ? {
         enabled: loopState.tdd.enabled ?? false,
-        phase: (loopState.tdd.phase as HarnessTDDPhase) ?? null,
+        phase: normalizeTddPhase(loopState.tdd.phase),
         testsWritten: loopState.tdd.testsWritten ?? [],
-        testStatus: (loopState.tdd.testStatus as HarnessTDDTestStatus) ?? null,
+        testStatus: normalizeTddTestStatus(loopState.tdd.testStatus),
       }
     : null;
 
@@ -344,9 +387,13 @@ export async function getHarnessInfo(cwd: string): Promise<HarnessInfo | null> {
       result: h.result ?? "",
     }));
 
-  // Extract v4.4.2 loop timing fields
+  // Extract v4.4.2 loop timing fields. Use explicit `!== undefined` checks so a
+  // present-but-falsy value (e.g. an empty-string timestamp) still surfaces timing.
   const timing: HarnessLoopTiming | null =
-    loopState?.startedAt || loopState?.lastAttemptAt || loopState?.lastCheckpoint || loopState?.escalationRequested !== undefined
+    loopState?.startedAt !== undefined ||
+    loopState?.lastAttemptAt !== undefined ||
+    loopState?.lastCheckpoint !== undefined ||
+    loopState?.escalationRequested !== undefined
       ? {
           startedAt: loopState.startedAt,
           lastAttemptAt: loopState.lastAttemptAt,
@@ -371,7 +418,7 @@ export async function getHarnessInfo(cwd: string): Promise<HarnessInfo | null> {
     };
   }>(join(harnessDir, "agent-memory.json"));
 
-  const agentMemory: HarnessAgentMemory | null = agentMemoryData
+  const agentMemory: HarnessAgentMemory | null = hasDefinedValues(agentMemoryData)
     ? {
         learnedPatterns: agentMemoryData.learnedPatterns,
         successfulApproaches: agentMemoryData.successfulApproaches,
@@ -393,7 +440,7 @@ export async function getHarnessInfo(cwd: string): Promise<HarnessInfo | null> {
     nextSteps?: Array<{ step?: number; action?: string; priority?: string }>;
   }>(join(harnessDir, "working-context.json"));
 
-  const rootWorkingContext: HarnessRootWorkingContext | null = rootWorkingCtxData
+  const rootWorkingContext: HarnessRootWorkingContext | null = hasDefinedValues(rootWorkingCtxData)
     ? {
         summary: rootWorkingCtxData.summary,
         workingFiles: rootWorkingCtxData.workingFiles,
@@ -417,10 +464,10 @@ export async function getHarnessInfo(cwd: string): Promise<HarnessInfo | null> {
       learnedRules,
     },
     loop: {
-      status: (loopState?.status as HarnessLoopStatus) ?? "idle",
+      status: normalizeLoopStatus(loopState?.status),
       feature: loopState?.feature ?? null,
       featureName: loopState?.featureName ?? null,
-      type: (loopState?.type as HarnessLoopType) ?? "feature",
+      type: normalizeLoopType(loopState?.type),
       linkedTo: loopState?.linkedTo
         ? {
             featureId: loopState.linkedTo.featureId ?? null,
