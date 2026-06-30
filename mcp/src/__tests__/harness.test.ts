@@ -679,6 +679,7 @@ describe("harness integration", () => {
         expect(result!.memory.recentDecisions).toEqual([]);
         expect(result!.memory.projectPatterns).toEqual([]);
         expect(result!.memory.avoidApproaches).toEqual([]);
+        expect(result!.memory.learnedRules).toEqual([]);
       });
     });
 
